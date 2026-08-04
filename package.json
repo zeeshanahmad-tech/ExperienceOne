@@ -1,0 +1,7 @@
+{
+  "name": "experience-one",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ]
+}

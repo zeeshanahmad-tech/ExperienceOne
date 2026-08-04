@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Get your weekly tender report</title>
+  <style>
+    body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
+    form { display: flex; gap: 0.5rem; }
+    input { flex: 1; padding: 0.6rem; font-size: 1rem; }
+    button { padding: 0.6rem 1rem; font-size: 1rem; cursor: pointer; }
+    #status { margin-top: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Interested in getting a report?</h1>
+  <p>Enter your business email — we'll email you back with what we found about your company, and take it from there.</p>
+  <form id="intake-form">
+    <input type="email" id="email" placeholder="you@company.com" required />
+    <button type="submit">Get started</button>
+  </form>
+  <p id="status"></p>
+
+  <script>
+    const AGENT_SERVICE_URL = ""; // TODO: set to the deployed Cloud Run URL before go-live
+
+    document.getElementById("intake-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("email").value;
+      const status = document.getElementById("status");
+      status.textContent = "Sending...";
+      try {
+        const res = await fetch(`${AGENT_SERVICE_URL}/web-intake`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        status.textContent = res.ok
+          ? "Check your inbox — we're putting your profile together."
+          : "Something went wrong, please try again.";
+      } catch {
+        status.textContent = "Something went wrong, please try again.";
+      }
+    });
+  </script>
+</body>
+</html>

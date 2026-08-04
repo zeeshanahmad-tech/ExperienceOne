@@ -1,0 +1,20 @@
+*.pdf
+
+# dependencies
+node_modules/
+
+# build output
+dist/
+build/
+
+# env / secrets
+.env
+.env.*
+!.env.example
+
+# Cloudflare
+.wrangler/
+
+# misc
+.DS_Store
+*.log

@@ -1,0 +1,8 @@
+name = "experience-one-email-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Set with `wrangler secret put AGENT_SERVICE_URL` / `wrangler secret put WORKER_SHARED_TOKEN`
+# rather than committing real values here.
+[vars]
+AGENT_SERVICE_URL = ""
