@@ -31,7 +31,7 @@
       line-height: 1.55; -webkit-font-smoothing: antialiased; overflow-x: hidden;
     }
     a { color: inherit; }
-    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
 
     /* Header */
     header { border-bottom: 1px solid var(--line); background: rgba(255,255,255,.85); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 10; }
@@ -52,16 +52,18 @@
     }
     .hero .wrap { position: relative; z-index: 1; }
     /* Fluid two-column: copy takes the space, the form flexes between 320–400px. */
-    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 32%, 400px); gap: 48px; align-items: center; padding: 84px 24px 68px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 34%, 440px); gap: 56px; align-items: center; padding: 84px 24px 68px; }
     .hero-copy { min-width: 0; }
     .hero-form { min-width: 0; }
-    .card { background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 28px; }
-    .card-title { margin: 0 0 5px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+    .card { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 2px 6px rgba(11,18,32,.04), 0 28px 54px -18px rgba(79,70,229,.24); padding: 36px 34px; }
+    .card-badge { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; color: #fff; background: linear-gradient(135deg, var(--accent), #7c74f6); box-shadow: 0 6px 14px -4px rgba(79,70,229,.5); margin-bottom: 16px; }
+    .card-badge svg { width: 22px; height: 22px; }
+    .card-title { margin: 0 0 5px; font-size: 20px; font-weight: 700; letter-spacing: -.015em; }
     .card-sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
     .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid #e0e3fb; padding: 6px 12px; border-radius: 999px; }
     .eyebrow .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(79,70,229,.5); animation: pulse 2.2s infinite; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(79,70,229,.45);} 70% { box-shadow: 0 0 0 8px rgba(79,70,229,0);} 100% { box-shadow: 0 0 0 0 rgba(79,70,229,0);} }
-    h1 { font-size: clamp(28px, 3.2vw, 42px); line-height: 1.14; letter-spacing: -.02em; margin: 18px 0 0; max-width: none; }
+    h1 { font-size: clamp(28px, 3.3vw, 40px); line-height: 1.14; letter-spacing: -.02em; margin: 18px 0 0; max-width: none; }
     h1 br { display: block; }
     h1 .grad { background: linear-gradient(120deg, var(--accent), #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
     .sub { font-size: clamp(16px, 2.1vw, 19px); color: var(--ink-2); margin: 22px 0 0; max-width: 46ch; }
@@ -70,8 +72,10 @@
     .intake { margin-top: 0; max-width: none; }
     form { display: flex; flex-direction: column; gap: 12px; }
     .field { flex: 1; position: relative; }
+    .field .in-ic { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: #94a3b8; pointer-events: none; transition: color .15s; }
+    .field:focus-within .in-ic { color: var(--accent); }
     input[type=email] {
-      width: 100%; height: 54px; padding: 0 16px; font-size: 16px; font-family: var(--font);
+      width: 100%; height: 54px; padding: 0 16px 0 44px; font-size: 16px; font-family: var(--font);
       border: 1.5px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); outline: none;
       transition: border-color .15s, box-shadow .15s;
     }
@@ -80,15 +84,20 @@
     input[type=email].invalid { border-color: var(--danger); box-shadow: 0 0 0 4px #fee2e2; }
     button.cta {
       height: 54px; width: 100%; padding: 0 22px; font-size: 15.5px; font-weight: 700; font-family: var(--font);
-      color: #fff; background: var(--accent); border: none; border-radius: 12px; cursor: pointer; white-space: nowrap;
-      display: inline-flex; align-items: center; justify-content: center; gap: 9px; transition: background .15s, transform .05s;
+      color: #fff; background: linear-gradient(135deg, var(--accent), #6d5df0); border: none; border-radius: 12px; cursor: pointer; white-space: nowrap;
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+      box-shadow: 0 8px 18px -6px rgba(79,70,229,.55); transition: box-shadow .15s, transform .08s, filter .15s;
     }
-    button.cta:hover { background: var(--accent-ink); }
-    button.cta:active { transform: translateY(1px); }
-    button.cta:disabled { opacity: .7; cursor: default; }
+    button.cta:hover { filter: brightness(1.06); box-shadow: 0 11px 24px -6px rgba(79,70,229,.65); transform: translateY(-1px); }
+    button.cta:active { transform: translateY(0); }
+    button.cta:disabled { filter: none; transform: none; box-shadow: 0 8px 18px -6px rgba(79,70,229,.4); cursor: default; }
+    .arrow { width: 17px; height: 17px; transition: transform .15s; }
+    button.cta:hover .arrow { transform: translateX(3px); }
+    button.cta:disabled .arrow { display: none; }
     .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .microcopy { margin: 12px 2px 0; font-size: 13.5px; color: var(--muted); }
+    .microcopy { display: flex; align-items: center; gap: 7px; margin: 14px 2px 0; font-size: 13px; color: var(--muted); }
+    .microcopy svg { width: 14px; height: 14px; flex-shrink: 0; color: #94a3b8; }
     .msg { margin: 12px 2px 0; font-size: 14px; font-weight: 600; display: none; }
     .msg.show { display: block; }
     .msg.error { color: var(--danger); }
@@ -152,7 +161,7 @@
           <div class="hero-copy">
             <span class="eyebrow"><span class="pulse"></span> Public tenders, on autopilot</span>
             <h1>Every week, the tenders <span class="grad">you<br>should bid on</span>, in your inbox.</h1>
-            <p class="sub">Give us your work email. We research your company, work out what you'd win, and send a curated shortlist of public tenders every Monday. No signup, no dashboard — reply to fine-tune.</p>
+            <p class="sub">Trawling procurement portals is a full-time job. So we do it for you — we learn what your business actually does, then email you a short list of the contracts you can realistically win. Every Monday. No logins, no dashboards, no noise. Something off? Just reply.</p>
             <div class="trust">
               <span><!-- lucide: lock-open --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> No password, no account</span>
               <span><!-- lucide: mail --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> Everything happens over email</span>
@@ -163,19 +172,31 @@
           <!-- Right: email capture -->
           <div class="hero-form">
             <div class="card" id="form-card">
+              <div class="card-badge" aria-hidden="true">
+                <!-- lucide: mail-plus -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="M16 19h6"/><path d="M19 16v6"/></svg>
+              </div>
               <h3 class="card-title">Start in one email</h3>
-              <p class="card-sub">Enter your work email — we'll research your company and email back what we found.</p>
+              <p class="card-sub">Pop in your work email. We'll dig into your company and email back what we found — usually within a minute.</p>
               <div class="intake">
                 <form id="intake-form" novalidate>
                   <div class="field">
+                    <!-- lucide: mail -->
+                    <svg class="in-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
                     <input type="email" id="email" placeholder="you@company.com" autocomplete="email" aria-label="Work email" />
                   </div>
                   <button class="cta" type="submit" id="submit-btn">
                     <span class="spinner" id="spinner"></span>
                     <span id="btn-label">Get my first report</span>
+                    <!-- lucide: arrow-right -->
+                    <svg class="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                   </button>
                 </form>
-                <p class="microcopy" id="microcopy">One email to start. Confirm what we found about you, and you're set.</p>
+                <p class="microcopy" id="microcopy">
+                  <!-- lucide: lock -->
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  No spam — one email to start, unsubscribe anytime.
+                </p>
                 <p class="msg" id="msg"></p>
               </div>
             </div>
@@ -227,9 +248,8 @@
 
   <script>
     // ── Config ───────────────────────────────────────────────────────────────
-    // When the agent-service Cloudflare Worker is live, set this to its URL and flip
-    // DEMO off. Until then, DEMO mode simulates the /web-intake contract so the page
-    // is fully clickable on its own.
+    // The deployed agent-service Worker. Set to "" to fall back to DEMO mode
+    // (simulated responses) for offline design work — but ship it pointing here.
     const AGENT_SERVICE_URL = "https://experience-one-agent-service.jd-ad0.workers.dev";
     const DEMO = !AGENT_SERVICE_URL;
 
