@@ -3,45 +3,316 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Get your weekly tender report</title>
+  <title>Radar — public tenders, in your inbox</title>
+  <meta name="description" content="Tell us your work email. We research your company and email you a weekly shortlist of public tenders worth bidding on. No signup, no dashboard." />
   <style>
-    body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
-    form { display: flex; gap: 0.5rem; }
-    input { flex: 1; padding: 0.6rem; font-size: 1rem; }
-    button { padding: 0.6rem 1rem; font-size: 1rem; cursor: pointer; }
-    #status { margin-top: 1rem; }
+    :root {
+      --ink: #0b1220;
+      --ink-2: #334155;
+      --muted: #64748b;
+      --line: #e6e9f0;
+      --bg: #ffffff;
+      --bg-soft: #f7f8fc;
+      --accent: #4f46e5;
+      --accent-ink: #4338ca;
+      --accent-soft: #eef2ff;
+      --good: #059669;
+      --good-soft: #ecfdf5;
+      --warn: #b45309;
+      --danger: #dc2626;
+      --radius: 14px;
+      --shadow: 0 1px 2px rgba(11,18,32,.04), 0 12px 32px rgba(11,18,32,.06);
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      margin: 0; font-family: var(--font); color: var(--ink); background: var(--bg);
+      line-height: 1.55; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+    }
+    a { color: inherit; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header { border-bottom: 1px solid var(--line); background: rgba(255,255,255,.85); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 10; }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: -.02em; font-size: 18px; }
+    .brand .dot { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), #7c74f6); display: grid; place-items: center; }
+    .brand .dot svg { width: 15px; height: 15px; color: #fff; }
+    .brand small { color: var(--muted); font-weight: 500; font-size: 12px; margin-left: 2px; }
+    .nav a.ghost { text-decoration: none; color: var(--ink-2); font-size: 14px; font-weight: 600; padding: 8px 12px; border-radius: 9px; }
+    .nav a.ghost:hover { background: var(--bg-soft); }
+
+    /* Hero */
+    .hero { position: relative; overflow: hidden; }
+    .hero::before {
+      content: ""; position: absolute; inset: -30% -10% auto -10%; height: 620px; z-index: 0;
+      background: radial-gradient(60% 60% at 70% 20%, rgba(79,70,229,.10), transparent 70%),
+                  radial-gradient(50% 50% at 10% 0%, rgba(124,116,246,.10), transparent 70%);
+    }
+    .hero .wrap { position: relative; z-index: 1; }
+    /* Fluid two-column: copy takes the space, the form flexes between 320–400px. */
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(320px, 32%, 400px); gap: 48px; align-items: center; padding: 84px 24px 68px; }
+    .hero-copy { min-width: 0; }
+    .hero-form { min-width: 0; }
+    .card { background: #fff; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 28px; }
+    .card-title { margin: 0 0 5px; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+    .card-sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; line-height: 1.5; }
+    .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid #e0e3fb; padding: 6px 12px; border-radius: 999px; }
+    .eyebrow .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(79,70,229,.5); animation: pulse 2.2s infinite; }
+    @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(79,70,229,.45);} 70% { box-shadow: 0 0 0 8px rgba(79,70,229,0);} 100% { box-shadow: 0 0 0 0 rgba(79,70,229,0);} }
+    h1 { font-size: clamp(28px, 3.2vw, 42px); line-height: 1.14; letter-spacing: -.02em; margin: 18px 0 0; max-width: none; }
+    h1 br { display: block; }
+    h1 .grad { background: linear-gradient(120deg, var(--accent), #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .sub { font-size: clamp(16px, 2.1vw, 19px); color: var(--ink-2); margin: 22px 0 0; max-width: 46ch; }
+
+    /* Form */
+    .intake { margin-top: 0; max-width: none; }
+    form { display: flex; flex-direction: column; gap: 12px; }
+    .field { flex: 1; position: relative; }
+    input[type=email] {
+      width: 100%; height: 54px; padding: 0 16px; font-size: 16px; font-family: var(--font);
+      border: 1.5px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input[type=email]::placeholder { color: #9aa4b5; }
+    input[type=email]:focus { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+    input[type=email].invalid { border-color: var(--danger); box-shadow: 0 0 0 4px #fee2e2; }
+    button.cta {
+      height: 54px; width: 100%; padding: 0 22px; font-size: 15.5px; font-weight: 700; font-family: var(--font);
+      color: #fff; background: var(--accent); border: none; border-radius: 12px; cursor: pointer; white-space: nowrap;
+      display: inline-flex; align-items: center; justify-content: center; gap: 9px; transition: background .15s, transform .05s;
+    }
+    button.cta:hover { background: var(--accent-ink); }
+    button.cta:active { transform: translateY(1px); }
+    button.cta:disabled { opacity: .7; cursor: default; }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .microcopy { margin: 12px 2px 0; font-size: 13.5px; color: var(--muted); }
+    .msg { margin: 12px 2px 0; font-size: 14px; font-weight: 600; display: none; }
+    .msg.show { display: block; }
+    .msg.error { color: var(--danger); }
+    .msg.warn { color: var(--warn); }
+
+    /* Success card (replaces form) */
+    .success { display: none; margin-top: 0; max-width: none; background: var(--good-soft); border: 1px solid #b7f0d8; border-radius: 18px; padding: 28px; }
+    .success.show { display: block; }
+    .success .ic { width: 42px; height: 42px; border-radius: 11px; background: #fff; display: grid; place-items: center; color: var(--good); margin-bottom: 12px; box-shadow: var(--shadow); }
+    .success h3 { margin: 0 0 6px; font-size: 18px; letter-spacing: -.01em; }
+    .success p { margin: 0; color: #14785a; font-size: 14.5px; }
+    .success .dom { font-weight: 700; }
+
+    /* Trust row */
+    .trust { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 30px; color: var(--muted); font-size: 13px; }
+    .trust span { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .trust svg { width: 16px; height: 16px; color: var(--accent); }
+
+    /* How it works */
+    .how { background: var(--bg-soft); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); margin-top: 64px; }
+    .how .wrap { padding: 64px 24px; }
+    .how h2 { font-size: clamp(24px, 3.2vw, 32px); letter-spacing: -.02em; margin: 0; }
+    .how .lead { color: var(--muted); margin: 10px 0 0; max-width: 52ch; }
+    /* Auto-flow cards: 3 → 2 → 1 across widths without hard breakpoints. */
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-top: 34px; }
+    .step { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+    .step .n { width: 34px; height: 34px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-weight: 800; display: grid; place-items: center; font-size: 15px; }
+    .step h4 { margin: 16px 0 6px; font-size: 17px; letter-spacing: -.01em; }
+    .step p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+    .step code { background: var(--accent-soft); color: var(--accent-ink); padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+
+    /* Footer */
+    footer { padding: 40px 24px; }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 13px; }
+    footer a { color: var(--muted); }
+
+    @media (max-width: 900px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 30px; padding: 52px 24px 48px; }
+    }
   </style>
 </head>
 <body>
-  <h1>Interested in getting a report?</h1>
-  <p>Enter your business email — we'll email you back with what we found about your company, and take it from there.</p>
-  <form id="intake-form">
-    <input type="email" id="email" placeholder="you@company.com" required />
-    <button type="submit">Get started</button>
-  </form>
-  <p id="status"></p>
+  <header>
+    <div class="wrap nav">
+      <div class="brand">
+        <span class="dot" aria-hidden="true">
+          <!-- lucide: target -->
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+        </span>
+        Radar <small>by AHI</small>
+      </div>
+      <a class="ghost" href="mailto:labs@radar.ahiapp.ai">Or just email us&nbsp;→</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="wrap">
+        <div class="hero-grid">
+          <!-- Left: messaging -->
+          <div class="hero-copy">
+            <span class="eyebrow"><span class="pulse"></span> Public tenders, on autopilot</span>
+            <h1>Every week, the tenders <span class="grad">you<br>should bid on</span>, in your inbox.</h1>
+            <p class="sub">Give us your work email. We research your company, work out what you'd win, and send a curated shortlist of public tenders every Monday. No signup, no dashboard — reply to fine-tune.</p>
+            <div class="trust">
+              <span><!-- lucide: lock-open --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> No password, no account</span>
+              <span><!-- lucide: mail --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> Everything happens over email</span>
+              <span><!-- lucide: bell-off --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/></svg> Unsubscribe anytime</span>
+            </div>
+          </div>
+
+          <!-- Right: email capture -->
+          <div class="hero-form">
+            <div class="card" id="form-card">
+              <h3 class="card-title">Start in one email</h3>
+              <p class="card-sub">Enter your work email — we'll research your company and email back what we found.</p>
+              <div class="intake">
+                <form id="intake-form" novalidate>
+                  <div class="field">
+                    <input type="email" id="email" placeholder="you@company.com" autocomplete="email" aria-label="Work email" />
+                  </div>
+                  <button class="cta" type="submit" id="submit-btn">
+                    <span class="spinner" id="spinner"></span>
+                    <span id="btn-label">Get my first report</span>
+                  </button>
+                </form>
+                <p class="microcopy" id="microcopy">One email to start. Confirm what we found about you, and you're set.</p>
+                <p class="msg" id="msg"></p>
+              </div>
+            </div>
+
+            <div class="success" id="success">
+              <div class="ic" aria-hidden="true">
+                <!-- lucide: send -->
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13"/><path d="m22 2-7 20-4-9-9-4z"/></svg>
+              </div>
+              <h3>Check your inbox ✉️</h3>
+              <p>We've started researching <span class="dom" id="success-dom">your company</span>. In a minute you'll get an email with what we found — reply to confirm or tweak it, and your weekly tenders begin.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="how">
+      <div class="wrap">
+        <h2>How it works</h2>
+        <p class="lead">Three steps, all over email. The hard part — reading every tender so you don't have to — is ours.</p>
+        <div class="steps">
+          <div class="step">
+            <div class="n">1</div>
+            <h4>Email us</h4>
+            <p>Drop your address above, or send a note to <code>labs@radar.ahiapp.ai</code>. A forwarded "just email these guys" works too.</p>
+          </div>
+          <div class="step">
+            <div class="n">2</div>
+            <h4>We research you</h4>
+            <p>From your company's domain we build a profile of what you do and the tenders you'd realistically win — then email it back to you.</p>
+          </div>
+          <div class="step">
+            <div class="n">3</div>
+            <h4>Confirm, then relax</h4>
+            <p>Check it, tweak it by replying in plain English, and a shortlist of matching public tenders lands in your inbox every week.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>© 2026 Radar · AHI</span>
+      <span>Questions? <a href="mailto:labs@radar.ahiapp.ai">labs@radar.ahiapp.ai</a></span>
+    </div>
+  </footer>
 
   <script>
-    const AGENT_SERVICE_URL = ""; // TODO: set to the deployed Cloud Run URL before go-live
+    // ── Config ───────────────────────────────────────────────────────────────
+    // When the Cloud Run agent-service is live, set this to its URL and flip DEMO
+    // off. Until then, DEMO mode simulates the /web-intake contract so the page
+    // is fully clickable on its own.
+    const AGENT_SERVICE_URL = ""; // e.g. "https://agent-service-xxxx.run.app"
+    const DEMO = !AGENT_SERVICE_URL;
 
-    document.getElementById("intake-form").addEventListener("submit", async (e) => {
+    const PERSONAL_DOMAINS = ["gmail.com","googlemail.com","outlook.com","hotmail.com","live.com","yahoo.com","icloud.com","aol.com","proton.me","protonmail.com","gmx.com","mail.com"];
+
+    // ── Elements ─────────────────────────────────────────────────────────────
+    const form = document.getElementById("intake-form");
+    const emailEl = document.getElementById("email");
+    const btn = document.getElementById("submit-btn");
+    const btnLabel = document.getElementById("btn-label");
+    const spinner = document.getElementById("spinner");
+    const msg = document.getElementById("msg");
+    const microcopy = document.getElementById("microcopy");
+    const success = document.getElementById("success");
+    const successDom = document.getElementById("success-dom");
+
+    function showMsg(text, kind) {
+      msg.textContent = text;
+      msg.className = "msg show " + (kind || "error");
+      emailEl.classList.toggle("invalid", kind === "error");
+    }
+    function clearMsg() { msg.className = "msg"; emailEl.classList.remove("invalid"); }
+    function setLoading(on) {
+      btn.disabled = on;
+      spinner.style.display = on ? "inline-block" : "none";
+      btnLabel.textContent = on ? "Researching…" : "Get my first report";
+    }
+    function domainOf(email) { return (email.split("@")[1] || "").toLowerCase(); }
+    function validEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
+
+    // ── Contract: POST /web-intake { email } → 202 ok | 400 invalid/personal ──
+    async function callIntake(email) {
+      if (DEMO) {
+        await new Promise(r => setTimeout(r, 900));
+        if (!validEmail(email)) return { status: 400, body: { ok: false, error: "invalid_email" } };
+        if (PERSONAL_DOMAINS.includes(domainOf(email))) return { status: 400, body: { ok: false, error: "personal_email" } };
+        return { status: 202, body: { ok: true } };
+      }
+      const res = await fetch(`${AGENT_SERVICE_URL}/web-intake`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      let body = {}; try { body = await res.json(); } catch {}
+      return { status: res.status, body };
+    }
+
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
-      const email = document.getElementById("email").value;
-      const status = document.getElementById("status");
-      status.textContent = "Sending...";
+      clearMsg();
+      const email = emailEl.value.trim();
+
+      // Client-side guard first (instant feedback).
+      if (!validEmail(email)) { showMsg("Please enter a valid email address.", "error"); emailEl.focus(); return; }
+
+      setLoading(true);
       try {
-        const res = await fetch(`${AGENT_SERVICE_URL}/web-intake`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        status.textContent = res.ok
-          ? "Check your inbox — we're putting your profile together."
-          : "Something went wrong, please try again.";
+        const { status, body } = await callIntake(email);
+        if (status === 202 && body.ok) {
+          successDom.textContent = domainOf(email);
+          document.getElementById("form-card").style.display = "none";
+          clearMsg();
+          success.classList.add("show");
+          return;
+        }
+        if (body.error === "personal_email") {
+          showMsg("Please use your work email — we research your company from its domain.", "warn");
+        } else if (body.error === "invalid_email") {
+          showMsg("That email doesn't look right — mind checking it?", "error");
+        } else if (status === 429) {
+          showMsg("One moment — please try again shortly.", "warn");
+        } else {
+          showMsg("Something went wrong. Please try again.", "error");
+        }
       } catch {
-        status.textContent = "Something went wrong, please try again.";
+        showMsg("Couldn't reach us just now — please try again.", "error");
+      } finally {
+        setLoading(false);
       }
     });
+
+    // Clear the invalid state as the user corrects it.
+    emailEl.addEventListener("input", () => { if (msg.classList.contains("show")) clearMsg(); });
   </script>
 </body>
 </html>
