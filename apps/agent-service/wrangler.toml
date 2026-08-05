@@ -1,0 +1,11 @@
+name = "experience-one-agent-service"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Secrets — set with `wrangler secret put <NAME>`, never committed here:
+#   GEMINI_API_KEY, RESEND_API_KEY, WORKER_SHARED_TOKEN, FIREBASE_SERVICE_ACCOUNT_JSON
+[vars]
+RESEND_SENDING_DOMAIN = "send.ahiapp.ai"
+REPLY_TO_ADDRESS = "labs@radar.ahiapp.ai"
+FIREBASE_PROJECT_ID = ""
+AHI_MCP_URL = "https://connect.ahiapp.ai/mcp"

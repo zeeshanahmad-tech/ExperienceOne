@@ -1,29 +1,40 @@
-import Fastify from "fastify";
+import { Hono } from "hono";
+import { handleInboundEmail, handleWebIntake, type Env, type InboundEmailPayload } from "./onboarding";
 
-const app = Fastify({ logger: true });
+export type { Env };
 
-// Liveness/readiness probe for Cloud Run.
-app.get("/healthz", async () => ({ ok: true }));
+const app = new Hono<{ Bindings: Env }>();
 
-// Called by the Cloudflare email-worker with parsed MIME fields + headers.
-// TODO: domain/thread matching (see IMPLEMENTATION_PLAN.md §4), Gemini enrichment call,
-// Firestore read/write, Resend send.
-app.post("/inbound-email", async (request, reply) => {
-  const token = request.headers.authorization?.replace("Bearer ", "");
-  if (token !== process.env.WORKER_SHARED_TOKEN) {
-    return reply.code(401).send({ error: "unauthorized" });
+app.get("/healthz", (c) => c.json({ ok: true }));
+
+app.post("/inbound-email", async (c) => {
+  const token = c.req.header("authorization")?.replace("Bearer ", "");
+  if (token !== c.env.WORKER_SHARED_TOKEN) {
+    return c.json({ error: "unauthorized" }, 401);
   }
-  return reply.code(501).send({ error: "not implemented" });
+
+  const payload = await c.req.json<InboundEmailPayload>();
+  try {
+    await handleInboundEmail(c.env, payload);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("inbound-email failed", err);
+    return c.json({ error: "internal_error", detail: String(err) }, 500);
+  }
 });
 
-// Called by the web marketing page with just an email address.
-// TODO: same enrichment path as /inbound-email, entered from the web front door.
-app.post("/web-intake", async (_request, reply) => {
-  return reply.code(501).send({ error: "not implemented" });
+app.post("/web-intake", async (c) => {
+  const { email } = await c.req.json<{ email: string }>();
+  if (!email || !email.includes("@")) {
+    return c.json({ error: "invalid_email" }, 400);
+  }
+  try {
+    await handleWebIntake(c.env, email);
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("web-intake failed", err);
+    return c.json({ error: "internal_error", detail: String(err) }, 500);
+  }
 });
 
-const port = Number(process.env.PORT) || 8080;
-app.listen({ port, host: "0.0.0.0" }).catch((err) => {
-  app.log.error(err);
-  process.exit(1);
-});
+export default app;

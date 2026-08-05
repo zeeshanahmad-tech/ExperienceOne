@@ -1,0 +1,13 @@
+# Copy to .dev.vars for local `wrangler dev` — never commit the real file.
+
+# Gemini API key (given by the organizer)
+GEMINI_API_KEY=
+
+# Resend
+RESEND_API_KEY=
+
+# Shared secret email-worker must present to call this service
+WORKER_SHARED_TOKEN=
+
+# Firestore access (Firebase Spark plan project) — service account JSON, single-line
+FIREBASE_SERVICE_ACCOUNT_JSON=

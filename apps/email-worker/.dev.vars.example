@@ -1,0 +1,4 @@
+# Copy to .dev.vars for local `wrangler dev` — never commit the real file.
+
+# Shared secret this worker presents to agent-service's /inbound-email
+WORKER_SHARED_TOKEN=

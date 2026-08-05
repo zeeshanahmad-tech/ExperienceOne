@@ -29,48 +29,49 @@ email in (cold, or forwarded mid-thread, zero context)
 
 ## 2. Architecture
 
-Two products do the inbound/outbound email plumbing (Cloudflare — already a paid account on the team); one product does the thinking and owns the required GCP + Gemini footprint (Cloud Run).
+**Revised 2026-08-04** — originally planned around Cloud Run; changed after discovering no one on the team has a card to put on a GCP billing account (Cloud Run, like nearly all GCP compute products, requires an active Cloud Billing account regardless of whether usage stays free). The fix isn't a workaround — the brief's rule is "≥1 Google Cloud product," not "≥1 Cloud Run service," and Firestore has a permanently-free tier (Firebase's **Spark plan**) that never requires a card at all. So: everything runs on Cloudflare (already a paid account on the team, zero extra cost), and Firestore is the one distinct, unambiguous Google Cloud product in the deployed app.
 
 ```mermaid
 sequenceDiagram
     participant U as SME owner
     participant Pages as Marketing page (Cloudflare Pages)
     participant Route as Cloudflare Email Routing
-    participant Worker as Email Worker (Cloudflare)
-    participant Run as Agent Service (Cloud Run)
-    participant Gemini as Gemini Interactions API
-    participant DB as Firestore
+    participant EmailWK as Email Worker (Cloudflare)
+    participant AgentWK as Agent Worker (Cloudflare)
+    participant Gemini as Gemini API
+    participant DB as Firestore (Firebase Spark plan)
     participant Resend as Resend
     participant MCP as AHI Tender Search MCP
 
     U->>Pages: Enters business email (optional front door)
-    Pages->>Run: POST /web-intake { email }
+    Pages->>AgentWK: POST /web-intake { email }
     U->>Route: Sends / forwards email to labs@radar.ahiapp.ai
-    Route->>Worker: email() trigger, raw MIME
-    Worker->>Run: POST /inbound-email { parsed fields, headers } (bearer token)
-    Run->>DB: Load-or-create profile (thread match, else sender domain)
-    Run->>Gemini: Enrich company (Google Search grounding tool)
-    Gemini-->>Run: Draft company + interest profile
-    Run->>DB: Save draft, append event log
-    Run->>Resend: Send confirm/refine email (threaded via Message-ID)
+    Route->>EmailWK: email() trigger, raw MIME
+    EmailWK->>AgentWK: POST /inbound-email { parsed fields, headers } (bearer token)
+    AgentWK->>DB: Load-or-create profile (thread match, else sender domain)
+    AgentWK->>Gemini: Enrich company (Google Search grounding tool)
+    Gemini-->>AgentWK: Draft company + interest profile
+    AgentWK->>DB: Save draft, append event log
+    AgentWK->>Resend: Send confirm/refine email (threaded via Message-ID)
     U->>Route: Replies (confirm, correction, or free-text edit)
-    Route->>Worker: email() trigger
-    Worker->>Run: POST /inbound-email
-    Run->>Gemini: Interpret reply, refine profile
-    Run->>DB: Update profile, append event log
+    Route->>EmailWK: email() trigger
+    EmailWK->>AgentWK: POST /inbound-email
+    AgentWK->>Gemini: Interpret reply, refine profile
+    AgentWK->>DB: Update profile, append event log
     alt confirmed
-        Run->>MCP: One light demo query (handoff proof)
-        Run->>DB: status = handed_off
-        Run->>Resend: Send confirmation email
+        AgentWK->>MCP: One light demo query (handoff proof)
+        AgentWK->>DB: status = handed_off
+        AgentWK->>Resend: Send confirmation email
     else needs another round
-        Run->>Resend: Send follow-up question
+        AgentWK->>Resend: Send follow-up question
     end
 ```
 
 **Why this split:**
-- Cloudflare has no GCP presence, so the Worker stays a thin adapter: parse MIME, forward to Cloud Run, nothing more. All the actual "AI is doing the work" happens in Cloud Run, which is also where the ≥1 GCP product requirement lives structurally, not as an afterthought.
-- Cloud Run calling the Gemini API satisfies "≥1 Gemini API call in the deployed app" on the same request path that does real work — not a decorative call bolted on for the checkbox.
-- Firestore keeps everything else GCP-native too (no third external dependency to wire credentials for this week), and gives us a natural place to write the append-only event log the "log everything" criterion wants.
+- Two Cloudflare Workers, not one: `email-worker` stays a thin MIME-parsing adapter (unchanged from before); `agent-service` is now also a Cloudflare Worker (not Cloud Run) — it's the brain, calling Gemini, Firestore, and Resend. Splitting them keeps the inbound-mail parsing concern separate from the AI/business logic, same as originally planned — only the *hosting* of the second one changed.
+- Firestore is the ≥1 Google Cloud product requirement, satisfied directly and unambiguously — not a token gesture, it's the actual profile + event-log store the whole flow depends on.
+- The Gemini API call happens from `agent-service` regardless of what hosts it — Cloudflare Workers have unrestricted outbound HTTPS, so calling `generativelanguage.googleapis.com` works the same as it would from Cloud Run.
+- No card, no billing account, no GCP project needed anywhere in this shape.
 
 ---
 
@@ -78,19 +79,19 @@ sequenceDiagram
 
 | Layer | Choice | Why |
 |---|---|---|
-| Agent service | **Node.js / TypeScript**, Fastify, on **Cloud Run** | Matches the team's existing Open_Tenders/Lane E stack; same language as the Cloudflare Worker end-to-end; `@google/genai` has a first-class Node/TS SDK. |
-| Inbound email | **Cloudflare Email Routing** → Worker (TypeScript) | Team already has a paid Cloudflare account; this is the standard, documented way to receive inbound mail without running our own SMTP. Worker parses MIME with `postal-mime`, then `fetch()`s the parsed payload to the Cloud Run service. |
+| Agent service | **Node.js / TypeScript**, **Hono**, on a **Cloudflare Worker** (`wrangler deploy`) | No card/billing account needed anywhere (see §2); same language + platform as `email-worker`, one deploy tool for both; Hono is the standard lightweight router for Workers, same request/response model Fastify had. |
+| Inbound email | **Cloudflare Email Routing** → Worker (TypeScript) | Team already has a paid Cloudflare account; this is the standard, documented way to receive inbound mail without running our own SMTP. Worker parses MIME with `postal-mime`, then `fetch()`s the parsed payload to `agent-service`. |
 | Outbound email | **Resend** | Per brief. One dedicated sending subdomain, threaded via `Message-ID`/`In-Reply-To`/`References`. |
-| Web front door | Static page on **Cloudflare Pages** | Genuinely minimal — one form, one POST to the same Cloud Run intake endpoint the email path uses. No framework needed. |
-| Profile + thread-state storage | **Firestore** (Native mode) | Serverless, zero ops, reinforces the GCP footprint, trivial client from Cloud Run. Not in the brief explicitly — team call, easy to swap if it becomes friction. |
-| AI | **Gemini Interactions API** (`gemini-3.6-flash` default) with the built-in **Google Search grounding** tool for enrichment, and the **MCP tool** registration pointed at `https://connect.ahiapp.ai/mcp` for the handoff-proof query | Confirmed live at `ai.google.dev/gemini-api/docs/custom-agents` — built-in tools include Search grounding, Code Execution, URL Context, plus registering remote MCP servers directly. |
-| Logging | **Cloud Logging** (automatic on Cloud Run, structured via Fastify/Pino) + a Firestore `events` collection | Cloud Logging covers infra-level logs for free; the Firestore event log is our own append-only trail (every inbound email, every Gemini call, every Resend send, every MCP call) that doubles as demo-able evidence, not just log lines nobody reads. |
+| Web front door | Static page on **Cloudflare Pages** | Genuinely minimal — one form, one POST to the `agent-service` intake endpoint the email path also uses. No framework needed. |
+| Profile + thread-state storage | **Firestore**, on Firebase's **Spark plan** | This is the ≥1 Google Cloud product requirement, satisfied directly — Spark is permanently free, no card ever, hard-capped quotas (1 GiB storage, 50K reads/20K writes per day) that a hackathon build won't come close to. Accessed via Firestore's REST API + a service-account JWT signed in-Worker (no Node-only Admin SDK, since Workers aren't Node). |
+| AI | **Gemini API** (`gemini-3.6-flash` default) with the built-in **Google Search grounding** tool for enrichment, and the **MCP tool** registration pointed at `https://connect.ahiapp.ai/mcp` for the handoff-proof query | Confirmed live at `ai.google.dev/gemini-api/docs/custom-agents`. Called via plain HTTPS from the Worker using the API key the organizer already provided — no GCP project needed for this half of the brief's rule, only for the Firestore half. |
+| Logging | A Firestore `events` collection + Cloudflare Workers' own request logs (`wrangler tail` / dashboard) | No Cloud Logging available without a GCP project, so the Firestore event log carries the "log everything" evidence trail — every inbound email, every Gemini call, every Resend send, every MCP call, in one place that's legible enough to screenshot for judging. |
 
-None of this is "don't debate, just build" territory per the brief — the brief pins *products* (Gemini, GCP, Resend, Cloudflare routing), not language or database. The above are this squad's calls, and cheap to revisit if they cause friction early in the week.
+None of this (except Gemini, Resend, Cloudflare Email Routing, and *some* Google Cloud product existing) is "don't debate, just build" territory per the brief — see the full mandated-vs-flexible breakdown the team worked through on 2026-08-04. The above are this squad's calls, and cheap to revisit if they cause friction.
 
 ---
 
-## 4. Data model (Firestore)
+## 4. Data model (Firestore, Firebase Spark plan)
 
 **`profiles/{domainKey}`** — one doc per sender domain (e.g. `magellancircle.com`):
 ```
@@ -118,11 +119,11 @@ This is the concrete mechanism that satisfies "must survive arriving mid-thread,
 
 ---
 
-## 5. Repo layout (scaffolded in this commit)
+## 5. Repo layout
 
 ```
 apps/
-  agent-service/   # Cloud Run service — Fastify + TypeScript. The brain: Gemini calls, Firestore, Resend, MCP.
+  agent-service/   # Cloudflare Worker — the brain: Gemini calls, Firestore, Resend, MCP.
   email-worker/    # Cloudflare Worker — receives inbound mail, parses MIME, forwards to agent-service.
   web/             # Static marketing page — one form, deployed to Cloudflare Pages.
 IMPLEMENTATION_PLAN.md
@@ -138,8 +139,8 @@ Assumes the hackathon clock is **Monday Aug 10 → Friday Aug 14, 2026** (the br
 
 | Day | Goal | Concrete output |
 |---|---|---|
-| **Mon** | Infra live, plumbing proven end-to-end with dummy logic | GCP project + Cloud Run deploy of a hello-world agent-service; Cloudflare Email Routing wired to the Worker; Worker successfully forwards a real inbound email's parsed fields to Cloud Run and it logs to Firestore. Resend sends one manual test email. **No Gemini yet — prove the pipes first.** |
-| **Tue** | Enrichment works | Gemini Interactions API wired into agent-service with Google Search grounding; domain → company profile draft generated from a handful of real test domains; draft-confirm email actually sends via Resend, threaded correctly. |
+| **Mon** | Infra live, plumbing proven end-to-end with dummy logic | Firebase project (Spark plan, no card) created, Firestore enabled; `agent-service` deployed as a Cloudflare Worker with a hello-world handler; Cloudflare Email Routing wired to `email-worker`; `email-worker` successfully forwards a real inbound email's parsed fields to `agent-service` and it logs to Firestore. Resend sends one manual test email. **No Gemini yet — prove the pipes first.** |
+| **Tue** | Enrichment works | Gemini API wired into `agent-service` with Google Search grounding; domain → company profile draft generated from a handful of real test domains; draft-confirm email actually sends via Resend, threaded correctly. |
 | **Wed** | Confirm/refine loop + forwardability | Reply parsing (confirm / correction / free-text edit) drives profile updates; cold-start domain-matching logic built and tested by forwarding a real email mid-thread with quoted history stripped. |
 | **Thu** | Handoff + hardening | On confirm: one light MCP query against `connect.ahiapp.ai/mcp` fires and logs; event log complete enough to screenshot; edge cases (bounces, ambiguous replies, repeated sends) handled gracefully; web front door wired to the same intake path. |
 | **Fri** | Demo-ready | Full dry run: someone outside the build team emails the live address cold and gets onboarded, enriched, confirmed, without opening a browser. Logging/dashboard evidence polished. Deploy frozen by early afternoon for the live demo. |
@@ -153,9 +154,13 @@ These aren't ours to assume past — flagging per the shared pre-split research:
 - ~~**Domain/DNS**~~ — **Resolved 2026-08-04.** `ahiapp.ai` is already a Cloudflare zone under the team's own account (`Jd@j24d.com's Account` — same `j24d.com` the team is on). `radar.ahiapp.ai` is now live as its own subdomain via Email Routing's native **Subdomains** feature (Settings → Subdomains → add `radar.ahiapp.ai`), which provisions MX/DKIM/SPF scoped to that subdomain's own hostname — independent of the apex. **Do not touch the apex `ahiapp.ai` Email Routing "Add missing records" panel** — the apex already has live production mail via IONOS (`mx00/mx01.ionos.com`), and adding Cloudflare's SPF record on top of the existing IONOS one would create a second `v=spf1` TXT record at the same hostname, which is an SPF PermError (RFC 7208) and would risk real AHI mail deliverability. Routing rule `labs@radar.ahiapp.ai` is Active, currently pointed at a verified personal Gmail for testing — confirmed working end-to-end (a real external test email arrived correctly addressed to `labs`; it landed in Gmail's spam folder, but that's Gmail's generic content heuristic on an unfamiliar test sender, not an auth failure — and irrelevant once the Action is swapped from "Send to an email" to **"Send to a Worker"** pointed at `email-worker`, which has no mailbox/spam-filter step at all). **TODO:** flip that swap once `apps/email-worker` is deployed.
   - **Side discovery, not yet acted on:** this same Cloudflare zone already has a **Catch-all** rule and an `agent@agents.ahiapp.ai` rule, both routing to an existing deployed Worker called `tender-email-agent`, with real traffic (56 received/7 days on `agents.ahiapp.ai` per Cloudflare analytics). Unknown what this is — worth asking `haroon@j24d.com` or `jd@j24d.com` (both already destination addresses on this account) before assuming it's unrelated to this hackathon. Not touching it either way; `radar.ahiapp.ai` is a separate lane.
   - **Side discovery, relevant to Experience 2:** `filipe.ribeiro@magellancircle.eu` is already a verified-pending destination address on this same account (added ~5 days prior). Magellan Circle is Experience 2's named live test case, and "who has the real profile" was an open ask in the pre-split research — this looks like a real, existing contact link worth passing to that squad.
-- **GCP project + billing owner:** who provisions the project Cloud Run and Firestore live in?
-- **Resend account + sending subdomain owner:** shared with Experience 2's squad, per prior research — needs one owner.
-- **Gemini API key:** confirmed the team has one. Store it as a local `.env` (already gitignored) for dev and as a **Cloud Run environment variable / Secret Manager secret** for the deployed service — never commit it, never paste it into chat/PRs.
+  - **Safety verification, requested by the team lead 2026-08-04:** confirmed live (not just recalled) that none of the above touched the apex or any pre-existing subdomain. `nslookup` against the real DNS after all changes: apex `ahiapp.ai` MX is still exactly `mx00/mx01.ionos.com` (unchanged); apex SPF TXT is still exactly `v=spf1 include:_spf-us.ionos.com ~all` (unchanged); `_dmarc.ahiapp.ai` is still the pre-existing CNAME to `dmarc.ionos.com` (unchanged — we cancelled rather than saved a conflicting record there, see below); `agents.ahiapp.ai` (the other, pre-existing, unrelated subdomain with real traffic) still resolves to the identical Cloudflare routing MX records it always had. Everything we added lives on brand-new names (`radar.ahiapp.ai`, `send.ahiapp.ai`/`send.send.ahiapp.ai`) that had no prior records, so nothing was overwritten.
+  - **Side discovery while wiring Resend (below):** `_dmarc.ahiapp.ai` already exists as a CNAME to `dmarc.ionos.com` (IONOS's hosted DMARC service), and it's set to **"Proxied"** (orange cloud) in Cloudflare. CNAME records used for non-HTTP purposes (DMARC delegation, ACME challenges, etc.) are supposed to stay "DNS only" — a proxied `_dmarc` CNAME can interfere with how external mail servers resolve it, meaning AHI's actual DMARC policy may not have been resolving correctly. Worth flagging to `haroon@j24d.com`/`jd@j24d.com`; not ours to fix.
+- ~~**GCP project + billing owner**~~ — **Resolved 2026-08-04.** No one on the team had a card, and Cloud Run (like nearly all GCP compute) requires an active Cloud Billing account regardless of usage staying free — confirmed, non-negotiable. Fix: dropped Cloud Run entirely. Firestore on Firebase's **Spark plan** needs no card, no billing account, no GCP project setup beyond creating a free Firebase project — that alone satisfies "≥1 Google Cloud product." `agent-service` moved to a Cloudflare Worker instead (see §2/§3). No billing owner needed at all now.
+- ~~**Resend account + sending subdomain**~~ — **Resolved 2026-08-04.** Signed up at resend.com (free plan, no card — 3,000 emails/month, 100/day, indefinitely free). Added `send.ahiapp.ai` as a **dedicated sending subdomain**, deliberately separate from `radar.ahiapp.ai` (receiving) to avoid any SPF collision, per the brief's own wording ("a dedicated sending subdomain"). DKIM + SPF/MX added manually in the `ahiapp.ai` Cloudflare zone (Auto configure was skipped on purpose — it would have required granting Resend OAuth write-access to the whole Cloudflare account rather than just adding a few records by hand). Domain status: **Verified**, ready to send. Skipped the optional DMARC record entirely — Resend's suggested record targets the apex `_dmarc.ahiapp.ai`, which already has the IONOS CNAME above; DKIM + SPF alone are sufficient. Shared-ownership question with Experience 2's squad (if they also need Resend) is now moot for our purposes — this account/domain is set up and working regardless of who else uses Resend.
+- **Gemini API key:** confirmed the team has one. Store it as a local `.env` (already gitignored) for dev and as a **Cloudflare Worker secret** (`wrangler secret put GEMINI_API_KEY`) for the deployed service — never commit it, never paste it into chat/PRs.
+- ~~**Firebase project for Firestore**~~ — **Resolved 2026-08-04.** Firestore (Standard edition, default database) created on the Spark plan ($0/month). First attempt was under the `agentfoundrylabs.com` Google Cloud org, which blocked service-account key creation via an org policy (`iam.disableServiceAccountKeyCreation` — a deliberate security hardening setting, blocks it for every project in that org, not specific to us). Fix: recreated the Firebase project under a personal Google account instead (project ID `experience-one-cecae`), which has no org policies attached, so key creation worked immediately. Service-account key generated and saved into `apps/agent-service/.dev.vars` locally (gitignored, never committed). Fine for a hackathon-scoped project; if this ever needed to move under the company org, that's an org-policy-exception conversation, not a code change.
+- ~~**AHI MCP endpoint auth**~~ — **Resolved 2026-08-04.** Confirmed by directly probing `https://connect.ahiapp.ai/mcp` with a raw MCP `initialize` request, no credentials attached: responded `200 OK` with a proper handshake (`"serverInfo":{"name":"Tender Data Cloudflare MCP Server"}`) and `Access-Control-Allow-Origin: *`. No auth needed — `agent-service` can call it directly (Streamable HTTP transport: POST JSON-RPC, reuse the returned `mcp-session-id` header for subsequent `tools/list`/`tools/call` requests).
 - **"Confirmed" as a data event:** does a reply parse count, or do we want an explicit "yes, confirm" phrase/link? Affects the state machine in §4 — current plan assumes Gemini classifies free-text replies (confirm / edit / unclear), figure this is is the good working default from the reply loop unless the group prefers a stricter confirm mechanism.
 - **Designer collaboration:** brief specifies "one squad, with the designer" for this experience — the marketing page and the tone/format of the confirm-email copy are the two places design input actually matters; loop them in before Thursday's polish pass, not Friday morning.
 

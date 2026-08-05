@@ -2,7 +2,8 @@ name = "experience-one-email-worker"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
-# Set with `wrangler secret put AGENT_SERVICE_URL` / `wrangler secret put WORKER_SHARED_TOKEN`
-# rather than committing real values here.
+# AGENT_SERVICE_URL isn't sensitive, so it's a plain var. WORKER_SHARED_TOKEN is a secret —
+# set with `wrangler secret put WORKER_SHARED_TOKEN`, and for local dev use `.dev.vars`
+# (see .dev.vars.example) rather than committing a real value here.
 [vars]
 AGENT_SERVICE_URL = ""

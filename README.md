@@ -12,10 +12,13 @@ Full context, architecture, data model, and the day-by-day build plan: see
 
 ```
 apps/
-  agent-service/   # Cloud Run service (Node/TS, Fastify) — Gemini calls, Firestore, Resend, MCP
+  agent-service/   # Cloudflare Worker (Node/TS, Hono) — Gemini calls, Firestore, Resend, MCP
   email-worker/    # Cloudflare Worker — inbound email parsing, forwards to agent-service
   web/             # Static marketing page (Cloudflare Pages) — one form, one front door
 ```
+
+Everything runs on Cloudflare + Firestore (Firebase's free Spark plan) — no GCP billing account
+or credit card needed anywhere. See `IMPLEMENTATION_PLAN.md` §2 for why.
 
 ## Setup
 
@@ -23,6 +26,7 @@ apps/
 npm install
 ```
 
-Each app has its own `.env.example` — copy to `.env` and fill in per-app secrets (Gemini API key,
-Resend API key, Firestore project, the shared bearer token between the Worker and the agent
-service). Never commit `.env` files or paste keys into chat/PRs.
+`agent-service` and `email-worker` each have a `.dev.vars.example` — copy to `.dev.vars` for local
+`wrangler dev` and fill in secrets (Gemini API key, Resend API key, the shared bearer token between
+the two Workers, the Firestore service-account JSON). For deployed secrets use
+`wrangler secret put <NAME>`. Never commit `.dev.vars` or paste keys into chat/PRs.

@@ -9,8 +9,6 @@ export default {
   async email(message: ForwardableEmailMessage, env: Env, _ctx: ExecutionContext) {
     const parsed = await PostalMime.parse(message.raw);
 
-    // TODO: also forward Message-ID / In-Reply-To / References so agent-service can do
-    // thread matching before falling back to sender-domain matching (see IMPLEMENTATION_PLAN.md §4).
     const payload = {
       from: message.from,
       to: message.to,
