@@ -5,6 +5,23 @@
 const GEMINI_MODEL = "gemini-3.6-flash";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+export interface TokenUsage {
+  promptTokenCount: number;
+  candidatesTokenCount: number;
+  toolUsePromptTokenCount: number;
+  totalTokenCount: number;
+}
+
+function extractUsage(result: any): TokenUsage {
+  const u = result.usageMetadata ?? {};
+  return {
+    promptTokenCount: u.promptTokenCount ?? 0,
+    candidatesTokenCount: u.candidatesTokenCount ?? 0,
+    toolUsePromptTokenCount: u.toolUsePromptTokenCount ?? 0,
+    totalTokenCount: u.totalTokenCount ?? 0,
+  };
+}
+
 async function callGemini(apiKey: string, body: Record<string, unknown>): Promise<any> {
   const res = await fetch(`${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent`, {
     method: "POST",
@@ -18,6 +35,7 @@ async function callGemini(apiKey: string, body: Record<string, unknown>): Promis
 export interface CompanyResearch {
   text: string;
   sourceUrls: string[];
+  usage: TokenUsage;
 }
 
 export async function researchCompany(apiKey: string, domain: string): Promise<CompanyResearch> {
@@ -45,7 +63,7 @@ export async function researchCompany(apiKey: string, domain: string): Promise<C
     .map((c: { web?: { uri?: string } }) => c.web?.uri)
     .filter((u: string | undefined): u is string => Boolean(u));
 
-  return { text, sourceUrls };
+  return { text, sourceUrls, usage: extractUsage(result) };
 }
 
 const PROFILE_SCHEMA = {
@@ -70,7 +88,12 @@ export interface DraftProfileFields {
   keywords: string[];
 }
 
-export async function draftProfile(apiKey: string, domain: string, research: CompanyResearch): Promise<DraftProfileFields> {
+export interface DraftProfileResult {
+  profile: DraftProfileFields;
+  usage: TokenUsage;
+}
+
+export async function draftProfile(apiKey: string, domain: string, research: CompanyResearch): Promise<DraftProfileResult> {
   const result = await callGemini(apiKey, {
     contents: [
       {
@@ -88,7 +111,7 @@ export async function draftProfile(apiKey: string, domain: string, research: Com
     generationConfig: { responseMimeType: "application/json", responseSchema: PROFILE_SCHEMA },
   });
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  return JSON.parse(text);
+  return { profile: JSON.parse(text), usage: extractUsage(result) };
 }
 
 const REPLY_SCHEMA = {
@@ -117,11 +140,16 @@ export interface ReplyInterpretation {
   replyMessage: string;
 }
 
+export interface ReplyInterpretationResult {
+  interpretation: ReplyInterpretation;
+  usage: TokenUsage;
+}
+
 export async function interpretReply(
   apiKey: string,
   currentProfile: DraftProfileFields,
   replyText: string
-): Promise<ReplyInterpretation> {
+): Promise<ReplyInterpretationResult> {
   const result = await callGemini(apiKey, {
     contents: [
       {
@@ -142,5 +170,5 @@ export async function interpretReply(
     generationConfig: { responseMimeType: "application/json", responseSchema: REPLY_SCHEMA },
   });
   const text = result.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  return JSON.parse(text);
+  return { interpretation: JSON.parse(text), usage: extractUsage(result) };
 }

@@ -1,6 +1,6 @@
 import { FirestoreClient } from "./firestore";
-import { researchCompany, draftProfile, interpretReply, type DraftProfileFields } from "./gemini";
-import { sendEmail } from "./resend";
+import { researchCompany, draftProfile, interpretReply, type DraftProfileFields, type TokenUsage } from "./gemini";
+import { sendEmail, type SendEmailOptions } from "./resend";
 import { queryTenderMcp } from "./mcp";
 
 export interface Env {
@@ -66,14 +66,44 @@ async function logEvent(
   domainKey: string,
   type: "inbound_email" | "web_intake" | "gemini_call" | "resend_send" | "mcp_query",
   payloadSummary: string,
-  ok: boolean
+  ok: boolean,
+  tokenUsage?: TokenUsage
 ): Promise<void> {
   await db.add(`profiles/${domainKey}/events`, {
     type,
     payloadSummary,
     ok,
+    ...(tokenUsage ? { tokenUsage } : {}),
     createdAt: new Date().toISOString(),
   });
+}
+
+/** Every Gemini call goes through here so token usage and failures both always get logged, not just successes. */
+async function callGeminiLogged<T extends { usage: TokenUsage }>(
+  db: FirestoreClient,
+  domainKey: string,
+  label: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  try {
+    const result = await fn();
+    await logEvent(db, domainKey, "gemini_call", label, true, result.usage);
+    return result;
+  } catch (err) {
+    await logEvent(db, domainKey, "gemini_call", `${label} failed: ${String(err)}`, false);
+    throw err;
+  }
+}
+
+/** Every outbound email goes through here so the event log tells the whole story, not just the Gemini half of it. */
+async function sendEmailLogged(db: FirestoreClient, domainKey: string, label: string, apiKey: string, opts: SendEmailOptions): Promise<void> {
+  try {
+    await sendEmail(apiKey, opts);
+    await logEvent(db, domainKey, "resend_send", label, true);
+  } catch (err) {
+    await logEvent(db, domainKey, "resend_send", `${label} failed: ${String(err)}`, false);
+    throw err;
+  }
 }
 
 async function recordMessage(
@@ -89,17 +119,18 @@ async function recordMessage(
   });
 }
 
-async function draftAndSaveProfile(db: FirestoreClient, env: Env, domainKey: string, contactEmail: string, rootMessageId: string | null) {
-  const research = await researchCompany(env.GEMINI_API_KEY, domainKey);
-  await logEvent(db, domainKey, "gemini_call", `researchCompany(${domainKey})`, true);
-
-  const profile = await draftProfile(env.GEMINI_API_KEY, domainKey, research);
-  await logEvent(db, domainKey, "gemini_call", `draftProfile(${domainKey})`, true);
+async function draftAndSaveProfile(db: FirestoreClient, env: Env, domainKey: string, contactEmail: string, rootMessageId: string | null): Promise<ProfileDoc> {
+  const research = await callGeminiLogged(db, domainKey, `researchCompany(${domainKey})`, () =>
+    researchCompany(env.GEMINI_API_KEY, domainKey)
+  );
+  const drafted = await callGeminiLogged(db, domainKey, `draftProfile(${domainKey})`, () =>
+    draftProfile(env.GEMINI_API_KEY, domainKey, research)
+  );
 
   const doc: ProfileDoc = {
     domain: domainKey,
     contactEmail,
-    profile,
+    profile: drafted.profile,
     sourceUrls: research.sourceUrls,
     status: "awaiting_confirmation",
     rootMessageId,
@@ -121,11 +152,11 @@ function formatProfileForEmail(profile: DraftProfileFields): string {
   return lines.length ? lines.join("\n") : "We couldn't find much public information about your company yet — feel free to fill in the gaps yourself.";
 }
 
-async function sendDraftEmail(env: Env, doc: ProfileDoc, opts: { inReplyTo?: string; references?: string }) {
+async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, opts: { inReplyTo?: string; references?: string }) {
   const body =
     `Here's what we found about your company:\n\n${formatProfileForEmail(doc.profile)}\n\n` +
     `Reply to this email to confirm it's right, or tell us what to change.`;
-  await sendEmail(env.RESEND_API_KEY, {
+  await sendEmailLogged(db, doc.domain, `draft profile to ${doc.contactEmail}`, env.RESEND_API_KEY, {
     from: `labs@${env.RESEND_SENDING_DOMAIN}`,
     replyTo: env.REPLY_TO_ADDRESS,
     to: doc.contactEmail,
@@ -145,7 +176,7 @@ export async function handleWebIntake(env: Env, email: string): Promise<void> {
   if (existing) return; // already onboarded or in progress — don't restart the flow
 
   const doc = await draftAndSaveProfile(db, env, domainKey, email, null);
-  await sendDraftEmail(env, doc, {});
+  await sendDraftEmail(db, env, doc, {});
   await logEvent(db, domainKey, "web_intake", `web intake for ${email}`, true);
 }
 
@@ -169,15 +200,15 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
   // Either way, the domain is the only anchor we trust; start the flow fresh.
   if (!existing) {
     const doc = await draftAndSaveProfile(db, env, domainKey, payload.from, payload.messageId);
-    await sendDraftEmail(env, doc, { inReplyTo: payload.messageId ?? undefined, references: payload.messageId ?? undefined });
+    await sendDraftEmail(db, env, doc, { inReplyTo: payload.messageId ?? undefined, references: payload.messageId ?? undefined });
     return;
   }
 
   if (existing.status === "handed_off" || existing.status === "confirmed") {
     // Already done — for hackathon scope, just acknowledge rather than re-running the whole flow.
-    await sendEmail(env.RESEND_API_KEY, {
+    await sendEmailLogged(db, domainKey, `already-confirmed ack to ${payload.from}`, env.RESEND_API_KEY, {
       from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-    replyTo: env.REPLY_TO_ADDRESS,
+      replyTo: env.REPLY_TO_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: "Thanks for the note — your profile is already confirmed and set up. We'll be in touch with your first report.",
@@ -187,15 +218,16 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
   }
 
   // Reply in the confirm/refine loop.
-  const interpretation = await interpretReply(env.GEMINI_API_KEY, existing.profile, payload.text ?? "");
-  await logEvent(db, domainKey, "gemini_call", `interpretReply(${domainKey}) -> ${interpretation.intent}`, true);
+  const { interpretation } = await callGeminiLogged(db, domainKey, `interpretReply(${domainKey})`, () =>
+    interpretReply(env.GEMINI_API_KEY, existing.profile, payload.text ?? "")
+  );
 
   if (interpretation.intent === "edit" && interpretation.updates) {
     const mergedProfile: DraftProfileFields = { ...existing.profile, ...interpretation.updates };
     await db.update(`profiles/${domainKey}`, { profile: mergedProfile, updatedAt: new Date().toISOString() });
-    await sendEmail(env.RESEND_API_KEY, {
+    await sendEmailLogged(db, domainKey, `edit reply to ${payload.from}`, env.RESEND_API_KEY, {
       from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-    replyTo: env.REPLY_TO_ADDRESS,
+      replyTo: env.REPLY_TO_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: `${interpretation.replyMessage}\n\nUpdated profile:\n\n${formatProfileForEmail(mergedProfile)}\n\nReply to confirm, or keep refining.`,
@@ -218,9 +250,9 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
     }
 
     await db.update(`profiles/${domainKey}`, { status: "handed_off", updatedAt: new Date().toISOString() });
-    await sendEmail(env.RESEND_API_KEY, {
+    await sendEmailLogged(db, domainKey, `handoff confirmation to ${payload.from}`, env.RESEND_API_KEY, {
       from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-    replyTo: env.REPLY_TO_ADDRESS,
+      replyTo: env.REPLY_TO_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: `${interpretation.replyMessage}${handoffNote}`,
@@ -231,7 +263,7 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
   }
 
   // unclear
-  await sendEmail(env.RESEND_API_KEY, {
+  await sendEmailLogged(db, domainKey, `clarifying reply to ${payload.from}`, env.RESEND_API_KEY, {
     from: `labs@${env.RESEND_SENDING_DOMAIN}`,
     replyTo: env.REPLY_TO_ADDRESS,
     to: payload.from,
