@@ -41,6 +41,22 @@ function domainOf(email: string): string {
   return email.split("@")[1]?.toLowerCase().trim() ?? email.toLowerCase().trim();
 }
 
+const VALID_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Kept in sync with apps/web/index.html's PERSONAL_DOMAINS list — the web form pre-filters
+// these client-side, but the server has to enforce it too, or a direct POST bypasses it
+// entirely and burns a real Gemini call on an address we can't meaningfully research.
+const PERSONAL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com",
+  "yahoo.com", "icloud.com", "aol.com", "proton.me", "protonmail.com", "gmx.com", "mail.com",
+]);
+
+export function validateWorkEmail(email: string): "invalid_email" | "personal_email" | null {
+  if (!VALID_EMAIL.test(email)) return "invalid_email";
+  if (PERSONAL_DOMAINS.has(domainOf(email))) return "personal_email";
+  return null;
+}
+
 function firestoreFor(env: Env): FirestoreClient {
   return new FirestoreClient(JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON));
 }

@@ -166,6 +166,17 @@ These aren't ours to assume past — flagging per the shared pre-split research:
 
 ---
 
+## 7a. Live deployment (as of 2026-08-05)
+
+- Marketing page: `https://experience-one-web.pages.dev/` (Cloudflare Pages, direct upload — no Git integration set up, redeploy manually with `wrangler pages deploy apps/web --project-name experience-one-web` after changes)
+- `agent-service`: `https://experience-one-agent-service.jd-ad0.workers.dev`
+- `email-worker`: `https://experience-one-email-worker.jd-ad0.workers.dev`
+- `labs@radar.ahiapp.ai` routing rule flipped from the personal-Gmail test destination to **Send to a Worker → experience-one-email-worker**, confirmed Active.
+- All four secrets (`GEMINI_API_KEY`, `RESEND_API_KEY`, `WORKER_SHARED_TOKEN`, `FIREBASE_SERVICE_ACCOUNT_JSON`) pushed to the deployed `agent-service` via `wrangler secret put`; `email-worker` has its own `WORKER_SHARED_TOKEN` secret matching.
+- Both Workers and the Pages project live under the `Jd@j24d.com's Account` Cloudflare account (`CLOUDFLARE_ACCOUNT_ID=ad0e82073fe55145813d96a272b9631f`) — the same one that owns `ahiapp.ai`, needed since Email Routing has to find the Worker in that account.
+
+**Not yet proven live**, even though deployed: the confirm/refine reply loop, forwardability (the hero mechanic), and the MCP handoff query have never actually been triggered through the real, deployed path — only individual pieces have been verified in isolation so far (see §7 above).
+
 ## 8. Definition of done (demo script)
 
 Mirrors the brief's own "demo moment" verbatim: someone **outside the build team**, from their **own inbox**, sends a cold email (or gets a forward with zero context) to the live address, and — without ever opening a browser — receives an enriched draft profile, confirms or edits it over email, and the system logs the whole thing and hands off to Experience 2's storage with one demonstrable MCP query. That's the acceptance test, not a synthetic one.

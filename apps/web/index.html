@@ -227,10 +227,10 @@
 
   <script>
     // ── Config ───────────────────────────────────────────────────────────────
-    // When the Cloud Run agent-service is live, set this to its URL and flip DEMO
-    // off. Until then, DEMO mode simulates the /web-intake contract so the page
+    // When the agent-service Cloudflare Worker is live, set this to its URL and flip
+    // DEMO off. Until then, DEMO mode simulates the /web-intake contract so the page
     // is fully clickable on its own.
-    const AGENT_SERVICE_URL = ""; // e.g. "https://agent-service-xxxx.run.app"
+    const AGENT_SERVICE_URL = "https://experience-one-agent-service.jd-ad0.workers.dev";
     const DEMO = !AGENT_SERVICE_URL;
 
     const PERSONAL_DOMAINS = ["gmail.com","googlemail.com","outlook.com","hotmail.com","live.com","yahoo.com","icloud.com","aol.com","proton.me","protonmail.com","gmx.com","mail.com"];

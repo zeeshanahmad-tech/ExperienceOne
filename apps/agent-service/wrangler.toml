@@ -7,5 +7,4 @@ compatibility_date = "2025-01-01"
 [vars]
 RESEND_SENDING_DOMAIN = "send.ahiapp.ai"
 REPLY_TO_ADDRESS = "labs@radar.ahiapp.ai"
-FIREBASE_PROJECT_ID = ""
 AHI_MCP_URL = "https://connect.ahiapp.ai/mcp"

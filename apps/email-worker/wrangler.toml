@@ -6,4 +6,4 @@ compatibility_date = "2025-01-01"
 # set with `wrangler secret put WORKER_SHARED_TOKEN`, and for local dev use `.dev.vars`
 # (see .dev.vars.example) rather than committing a real value here.
 [vars]
-AGENT_SERVICE_URL = ""
+AGENT_SERVICE_URL = "https://experience-one-agent-service.jd-ad0.workers.dev"
