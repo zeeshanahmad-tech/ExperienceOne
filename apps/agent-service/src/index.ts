@@ -30,19 +30,22 @@ app.post("/inbound-email", async (c) => {
 });
 
 // Contract (matches apps/web/index.html): POST { email } → 202 { ok: true } | 400 { ok: false, error }
+// Acknowledge INSTANTLY, then run the slow work (Gemini enrichment + Resend send)
+// in the background with waitUntil — otherwise the browser sits on a spinner for
+// the whole pipeline. Validation stays synchronous so a bad / personal email still
+// gets an immediate 400; only the accepted path is backgrounded.
 app.post("/web-intake", async (c) => {
   const { email } = await c.req.json<{ email: string }>();
   const error = validateWorkEmail(email ?? "");
   if (error) {
     return c.json({ ok: false, error }, 400);
   }
-  try {
-    await handleWebIntake(c.env, email);
-    return c.json({ ok: true }, 202);
-  } catch (err) {
-    console.error("web-intake failed", err);
-    return c.json({ ok: false, error: "internal_error", detail: String(err) }, 500);
-  }
+  c.executionCtx.waitUntil(
+    handleWebIntake(c.env, email).catch((err) =>
+      console.error("web-intake background failed", err)
+    )
+  );
+  return c.json({ ok: true }, 202);
 });
 
 export default app;
