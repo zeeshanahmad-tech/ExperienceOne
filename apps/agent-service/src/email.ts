@@ -21,6 +21,9 @@ export interface SendEmailOptions {
   to: string;
   subject: string;
   text: string;
+  // Optional HTML body. When present, clients render this; `text` stays as the
+  // plain-text fallback (text-only clients, deliverability, accessibility).
+  html?: string;
   inReplyTo?: string;
   references?: string;
 }
@@ -35,6 +38,7 @@ export async function sendEmail(emailBinding: SendEmailBinding, opts: SendEmailO
     to: opts.to,
     subject: opts.subject,
     text: opts.text,
+    html: opts.html,
     headers: Object.keys(headers).length ? headers : undefined,
   });
 }
