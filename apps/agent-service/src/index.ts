@@ -29,23 +29,26 @@ app.post("/inbound-email", async (c) => {
   }
 });
 
-// Contract (matches apps/web/index.html): POST { email } → 202 { ok: true } | 400 { ok: false, error }
-// Acknowledge INSTANTLY, then run the slow work (Gemini enrichment + Resend send)
-// in the background with waitUntil — otherwise the browser sits on a spinner for
-// the whole pipeline. Validation stays synchronous so a bad / personal email still
-// gets an immediate 400; only the accepted path is backgrounded.
+// Contract (matches apps/web/index.html): POST { email } → 202 { ok: true } | 400/500 { ok: false, error }
+// Reverted to synchronous 2026-08-06 — a prior version acknowledged instantly and ran the
+// pipeline in the background via waitUntil for a snappier UI, but that broke in production:
+// Cloudflare killed the backgrounded task before it finished ("waitUntil() tasks did not
+// complete within the allowed time"), so the page showed success while nothing actually
+// happened — no profile saved, no email sent, no error surfaced anywhere. A slower response
+// that's honest about the real outcome beats a fast one that silently lies about it.
 app.post("/web-intake", async (c) => {
   const { email } = await c.req.json<{ email: string }>();
   const error = validateWorkEmail(email ?? "");
   if (error) {
     return c.json({ ok: false, error }, 400);
   }
-  c.executionCtx.waitUntil(
-    handleWebIntake(c.env, email).catch((err) =>
-      console.error("web-intake background failed", err)
-    )
-  );
-  return c.json({ ok: true }, 202);
+  try {
+    await handleWebIntake(c.env, email);
+    return c.json({ ok: true }, 202);
+  } catch (err) {
+    console.error("web-intake failed", err);
+    return c.json({ ok: false, error: "internal_error", detail: String(err) }, 500);
+  }
 });
 
 export default app;

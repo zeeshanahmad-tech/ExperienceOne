@@ -8,7 +8,7 @@ Source of truth: `AHI Hackathon — August 2026 — Build Brief - Actual.pdf` (k
 
 ## 1. What we're building
 
-One agent behind a dedicated address (working name `labs@radar.ahiapp.ai`), with a minimal marketing page as a second front door into the same flow:
+One agent behind a dedicated address (`labs@onboard.ahiapp.ai` — originally `radar.ahiapp.ai`, switched 2026-08-06 after discovering that name collided with an unrelated, pre-existing live product; see §7a), with a minimal marketing page as a second front door into the same flow:
 
 ```
 email in (cold, or forwarded mid-thread, zero context)
@@ -45,7 +45,7 @@ sequenceDiagram
 
     U->>Pages: Enters business email (optional front door)
     Pages->>AgentWK: POST /web-intake { email }
-    U->>Route: Sends / forwards email to labs@radar.ahiapp.ai
+    U->>Route: Sends / forwards email to labs@onboard.ahiapp.ai
     Route->>EmailWK: email() trigger, raw MIME
     EmailWK->>AgentWK: POST /inbound-email { parsed fields, headers } (bearer token)
     AgentWK->>DB: Load-or-create profile (thread match, else sender domain)
@@ -171,9 +171,16 @@ These aren't ours to assume past — flagging per the shared pre-split research:
 - Marketing page: `https://experience-one-web.pages.dev/` (Cloudflare Pages, direct upload — no Git integration set up, redeploy manually with `wrangler pages deploy apps/web --project-name experience-one-web` after changes)
 - `agent-service`: `https://experience-one-agent-service.jd-ad0.workers.dev`
 - `email-worker`: `https://experience-one-email-worker.jd-ad0.workers.dev`
-- `labs@radar.ahiapp.ai` routing rule flipped from the personal-Gmail test destination to **Send to a Worker → experience-one-email-worker**, confirmed Active.
-- All four secrets (`GEMINI_API_KEY`, `RESEND_API_KEY`, `WORKER_SHARED_TOKEN`, `FIREBASE_SERVICE_ACCOUNT_JSON`) pushed to the deployed `agent-service` via `wrangler secret put`; `email-worker` has its own `WORKER_SHARED_TOKEN` secret matching.
+- ~~`labs@radar.ahiapp.ai` routing rule flipped from the personal-Gmail test destination to **Send to a Worker → experience-one-email-worker**, confirmed Active.~~
+- All four secrets (`GEMINI_API_KEY`, `RESEND_API_KEY`, `WORKER_SHARED_TOKEN`, `FIREBASE_SERVICE_ACCOUNT_JSON`) pushed to the deployed `agent-service` via `wrangler secret put`; `email-worker` has its own `WORKER_SHARED_TOKEN` secret matching. (`RESEND_API_KEY` is now unused, see below — left set, harmless.)
 - Both Workers and the Pages project live under the `Jd@j24d.com's Account` Cloudflare account (`CLOUDFLARE_ACCOUNT_ID=ad0e82073fe55145813d96a272b9631f`) — the same one that owns `ahiapp.ai`, needed since Email Routing has to find the Worker in that account.
+
+**Superseded 2026-08-06 — `radar.ahiapp.ai` → `onboard.ahiapp.ai`, and Resend → Cloudflare's native `send_email` binding.** While setting up `radar.ahiapp.ai` for outbound sending too (to unify send/receive on one address), discovered it wasn't actually free real estate — it collides with an existing, unrelated, live product also called "AHI Radar" (a tender-search website already running at that exact hostname from a prior hackathon). Switched the whole address to `labs@onboard.ahiapp.ai` instead. While making that change, also dropped Resend entirely in favor of Cloudflare's own native Email Sending — since `onboard.ahiapp.ai` is onboarded for both sending and receiving in the same Cloudflare account, there's no cross-vendor SPF conflict to work around (the reason `send.ahiapp.ai` and the `Reply-To` trick existed in the first place), so the whole split-domain workaround became unnecessary. Concretely:
+- `onboard.ahiapp.ai` added as an Email Routing subdomain (inbound) and separately onboarded for Email Sending (outbound) — Cloudflare auto-coordinates one DNS setup covering both, confirmed via its own docs.
+- `_dmarc.onboard.ahiapp.ai` manually softened from Cloudflare's default `p=reject` to `p=none` — sensible for a brand-new, still-being-tested sending domain; the *only* record on that domain marked "Unlocked" (safely editable) rather than "Locked."
+- `agent-service`: `resend.ts` kept, not deleted, marked deprecated (`src/email.ts` is now the active client using the native `send_email` binding); `wrangler.toml`'s `RESEND_SENDING_DOMAIN`/`REPLY_TO_ADDRESS` commented out, replaced by one `AGENT_EMAIL_ADDRESS = "labs@onboard.ahiapp.ai"` var and a `[[send_email]] name = "EMAIL"` binding — no API key needed.
+- Required upgrading `wrangler` from v3.80 to v4.119 across both Workers — v3's Miniflare recognized the new binding's config but didn't actually wire it into the runtime `env` locally, a version gap, not a code bug.
+- Verified end-to-end locally post-swap: a fresh `j24d.com` submission ran real Gemini research (genuinely found and cited "J24D Lda.," "JD Piquard," "Project AHI" — not templated) through Firestore save through the new email binding, confirmed via direct Firestore read and the local email-simulation file. Redeployed `agent-service`; `apps/web/index.html`'s three `radar.ahiapp.ai` references (header, step copy, footer) updated to `onboard.ahiapp.ai` to match.
 
 **Not yet proven live**, even though deployed: the confirm/refine reply loop, forwardability (the hero mechanic), and the MCP handoff query have never actually been triggered through the real, deployed path — only individual pieces have been verified in isolation so far (see §7 above).
 

@@ -2,9 +2,20 @@ name = "experience-one-agent-service"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
+# Native Cloudflare Email Sending binding — no API key needed, unlike the Resend setup below.
+# Requires onboard.ahiapp.ai to be onboarded in Compute > Email Service > Email Sending.
+[[send_email]]
+name = "EMAIL"
+
 # Secrets — set with `wrangler secret put <NAME>`, never committed here:
-#   GEMINI_API_KEY, RESEND_API_KEY, WORKER_SHARED_TOKEN, FIREBASE_SERVICE_ACCOUNT_JSON
+#   GEMINI_API_KEY, WORKER_SHARED_TOKEN, FIREBASE_SERVICE_ACCOUNT_JSON
+#   (RESEND_API_KEY is deprecated — kept working but unused, see src/resend.ts)
 [vars]
-RESEND_SENDING_DOMAIN = "send.ahiapp.ai"
-REPLY_TO_ADDRESS = "labs@radar.ahiapp.ai"
+AGENT_EMAIL_ADDRESS = "labs@onboard.ahiapp.ai"
 AHI_MCP_URL = "https://connect.ahiapp.ai/mcp"
+
+# Deprecated 2026-08-05 — replaced by the send_email binding above (labs@onboard.ahiapp.ai
+# now sends and receives on the same address, so RESEND_SENDING_DOMAIN/REPLY_TO_ADDRESS's
+# split-domain + Reply-To workaround is no longer needed). Kept, not deleted, in case of rollback.
+# RESEND_SENDING_DOMAIN = "send.ahiapp.ai"
+# REPLY_TO_ADDRESS = "labs@radar.ahiapp.ai"

@@ -1,16 +1,24 @@
 import { FirestoreClient } from "./firestore";
 import { researchCompany, draftProfile, interpretReply, type DraftProfileFields, type TokenUsage } from "./gemini";
-import { sendEmail, type SendEmailOptions } from "./resend";
+import { sendEmail, type SendEmailBinding, type SendEmailOptions } from "./email";
+// Deprecated 2026-08-05 — replaced by ./email (Cloudflare's native send_email binding).
+// Kept working, not deleted, in case of rollback. See wrangler.toml for the matching
+// commented-out vars.
+// import { sendEmail, type SendEmailOptions } from "./resend";
 import { queryTenderMcp } from "./mcp";
 
 export interface Env {
   WORKER_SHARED_TOKEN: string;
   GEMINI_API_KEY: string;
-  RESEND_API_KEY: string;
-  RESEND_SENDING_DOMAIN: string;
-  REPLY_TO_ADDRESS: string;
+  EMAIL: SendEmailBinding;
+  AGENT_EMAIL_ADDRESS: string;
   FIREBASE_SERVICE_ACCOUNT_JSON: string;
   AHI_MCP_URL: string;
+  // Deprecated 2026-08-05 — see wrangler.toml. Left declared here so restoring the Resend
+  // path back doesn't also require re-adding these.
+  // RESEND_API_KEY: string;
+  // RESEND_SENDING_DOMAIN: string;
+  // REPLY_TO_ADDRESS: string;
 }
 
 export interface InboundEmailPayload {
@@ -96,9 +104,9 @@ async function callGeminiLogged<T extends { usage: TokenUsage }>(
 }
 
 /** Every outbound email goes through here so the event log tells the whole story, not just the Gemini half of it. */
-async function sendEmailLogged(db: FirestoreClient, domainKey: string, label: string, apiKey: string, opts: SendEmailOptions): Promise<void> {
+async function sendEmailLogged(db: FirestoreClient, domainKey: string, label: string, emailBinding: SendEmailBinding, opts: SendEmailOptions): Promise<void> {
   try {
-    await sendEmail(apiKey, opts);
+    await sendEmail(emailBinding, opts);
     await logEvent(db, domainKey, "resend_send", label, true);
   } catch (err) {
     await logEvent(db, domainKey, "resend_send", `${label} failed: ${String(err)}`, false);
@@ -156,9 +164,8 @@ async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, op
   const body =
     `Here's what we found about your company:\n\n${formatProfileForEmail(doc.profile)}\n\n` +
     `Reply to this email to confirm it's right, or tell us what to change.`;
-  await sendEmailLogged(db, doc.domain, `draft profile to ${doc.contactEmail}`, env.RESEND_API_KEY, {
-    from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-    replyTo: env.REPLY_TO_ADDRESS,
+  await sendEmailLogged(db, doc.domain, `draft profile to ${doc.contactEmail}`, env.EMAIL, {
+    from: env.AGENT_EMAIL_ADDRESS,
     to: doc.contactEmail,
     subject: "Here's what we found about your company",
     text: body,
@@ -206,9 +213,8 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
 
   if (existing.status === "handed_off" || existing.status === "confirmed") {
     // Already done — for hackathon scope, just acknowledge rather than re-running the whole flow.
-    await sendEmailLogged(db, domainKey, `already-confirmed ack to ${payload.from}`, env.RESEND_API_KEY, {
-      from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-      replyTo: env.REPLY_TO_ADDRESS,
+    await sendEmailLogged(db, domainKey, `already-confirmed ack to ${payload.from}`, env.EMAIL, {
+      from: env.AGENT_EMAIL_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: "Thanks for the note — your profile is already confirmed and set up. We'll be in touch with your first report.",
@@ -225,9 +231,8 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
   if (interpretation.intent === "edit" && interpretation.updates) {
     const mergedProfile: DraftProfileFields = { ...existing.profile, ...interpretation.updates };
     await db.update(`profiles/${domainKey}`, { profile: mergedProfile, updatedAt: new Date().toISOString() });
-    await sendEmailLogged(db, domainKey, `edit reply to ${payload.from}`, env.RESEND_API_KEY, {
-      from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-      replyTo: env.REPLY_TO_ADDRESS,
+    await sendEmailLogged(db, domainKey, `edit reply to ${payload.from}`, env.EMAIL, {
+      from: env.AGENT_EMAIL_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: `${interpretation.replyMessage}\n\nUpdated profile:\n\n${formatProfileForEmail(mergedProfile)}\n\nReply to confirm, or keep refining.`,
@@ -250,9 +255,8 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
     }
 
     await db.update(`profiles/${domainKey}`, { status: "handed_off", updatedAt: new Date().toISOString() });
-    await sendEmailLogged(db, domainKey, `handoff confirmation to ${payload.from}`, env.RESEND_API_KEY, {
-      from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-      replyTo: env.REPLY_TO_ADDRESS,
+    await sendEmailLogged(db, domainKey, `handoff confirmation to ${payload.from}`, env.EMAIL, {
+      from: env.AGENT_EMAIL_ADDRESS,
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: `${interpretation.replyMessage}${handoffNote}`,
@@ -263,9 +267,8 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
   }
 
   // unclear
-  await sendEmailLogged(db, domainKey, `clarifying reply to ${payload.from}`, env.RESEND_API_KEY, {
-    from: `labs@${env.RESEND_SENDING_DOMAIN}`,
-    replyTo: env.REPLY_TO_ADDRESS,
+  await sendEmailLogged(db, domainKey, `clarifying reply to ${payload.from}`, env.EMAIL, {
+    from: env.AGENT_EMAIL_ADDRESS,
     to: payload.from,
     subject: `Re: ${payload.subject ?? "your profile"}`,
     text: interpretation.replyMessage,

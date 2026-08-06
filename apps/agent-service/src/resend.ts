@@ -1,3 +1,8 @@
+// DEPRECATED 2026-08-05 — no longer wired into onboarding.ts, replaced by src/email.ts
+// (Cloudflare's native send_email binding on labs@onboard.ahiapp.ai). Kept working and
+// untouched, not deleted, in case of rollback — see wrangler.toml for the matching
+// commented-out RESEND_SENDING_DOMAIN/REPLY_TO_ADDRESS vars and CLAUDE.md for why this
+// specific swap happened (radar.ahiapp.ai turned out to collide with an existing product name).
 export interface SendEmailOptions {
   from: string;
   to: string;

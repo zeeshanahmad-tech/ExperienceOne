@@ -3,6 +3,14 @@
 For architecture, data model, and the "why" behind decisions, see `IMPLEMENTATION_PLAN.md`. This file is
 just the practical "how to deploy" reference — every command below has been run and verified working.
 
+**Before running any command in this file that deploys, pushes, or commits** (`wrangler deploy`,
+`wrangler pages deploy`, `git commit`, `git push`, `wrangler secret put` against the live services) —
+**stop and get explicit go-ahead from the user first**, even mid-task, even if a similar action was
+approved earlier in the same session. Editing/writing files locally doesn't need this; shipping
+anything live or into shared git history does. Two people deploy pieces of this project independently
+(marketing page vs. backend) — an unrequested deploy from either side can clobber the other's in-flight
+work.
+
 ## Prerequisites (once per machine)
 
 1. `npm install` at the repo root (installs all three `apps/*` workspaces).
@@ -24,7 +32,10 @@ just the practical "how to deploy" reference — every command below has been ru
 | Agent brain | `https://experience-one-agent-service.jd-ad0.workers.dev` | Worker `experience-one-agent-service` |
 | Email parser | `https://experience-one-email-worker.jd-ad0.workers.dev` | Worker `experience-one-email-worker` |
 
-`labs@radar.ahiapp.ai` (Cloudflare Email Routing, zone `ahiapp.ai`) routes to `experience-one-email-worker`.
+`labs@onboard.ahiapp.ai` (Cloudflare Email Routing, zone `ahiapp.ai`) routes to `experience-one-email-worker`,
+and sends outbound from the same address via Cloudflare's native Email Sending (no Resend anymore — see
+`IMPLEMENTATION_PLAN.md` §7a for why). `radar.ahiapp.ai` was the original working address; dropped after it
+turned out to collide with an unrelated, pre-existing live product of the same name.
 
 ## Deploying `apps/web` (the marketing page)
 
@@ -92,7 +103,7 @@ Cloudflare Email Routing, not visited directly. A deployed URL exists but return
 **The Email Routing rule itself** (which address routes to this Worker) is configured in the Cloudflare
 dashboard, not via `wrangler` — the account's API token here lacks the `email_routing:write` scope, so
 this step can't be scripted. Dashboard → Email Routing → `ahiapp.ai` → Routing rules → the
-`labs@radar.ahiapp.ai` rule → should point to **Send to a Worker → experience-one-email-worker**.
+`labs@onboard.ahiapp.ai` rule → should point to **Send to a Worker → experience-one-email-worker**.
 Only needs touching if the destination Worker's name ever changes.
 
 ## Local dev (before deploying)

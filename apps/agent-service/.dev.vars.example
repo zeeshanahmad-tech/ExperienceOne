@@ -3,8 +3,9 @@
 # Gemini API key (given by the organizer)
 GEMINI_API_KEY=
 
-# Resend
-RESEND_API_KEY=
+# Deprecated 2026-08-05 — outbound email now uses Cloudflare's native send_email binding
+# (see wrangler.toml), no API key needed. Kept here, unused, in case of rollback to src/resend.ts.
+# RESEND_API_KEY=
 
 # Shared secret email-worker must present to call this service
 WORKER_SHARED_TOKEN=
