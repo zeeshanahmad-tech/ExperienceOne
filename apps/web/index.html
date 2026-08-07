@@ -52,7 +52,7 @@
     }
     .hero .wrap { position: relative; z-index: 1; }
     /* Fluid two-column: copy takes the space, the form flexes between 320–400px. */
-    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(380px, 34%, 440px); gap: 56px; align-items: center; padding: 84px 24px 68px; }
+    .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) clamp(480px, 44%, 540px); gap: 44px; align-items: center; padding: 60px 24px 60px; }
     .hero-copy { min-width: 0; }
     .hero-form { min-width: 0; }
     .card { position: relative; background: #fff; border: 1px solid var(--line); border-radius: 22px; box-shadow: 0 2px 6px rgba(11,18,32,.04), 0 28px 54px -18px rgba(79,70,229,.24); padding: 36px 34px; }
@@ -63,10 +63,10 @@
     .eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent-ink); background: var(--accent-soft); border: 1px solid #e0e3fb; padding: 6px 12px; border-radius: 999px; }
     .eyebrow .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(79,70,229,.5); animation: pulse 2.2s infinite; }
     @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(79,70,229,.45);} 70% { box-shadow: 0 0 0 8px rgba(79,70,229,0);} 100% { box-shadow: 0 0 0 0 rgba(79,70,229,0);} }
-    h1 { font-size: clamp(28px, 3.3vw, 40px); line-height: 1.14; letter-spacing: -.02em; margin: 18px 0 0; max-width: none; }
+    h1 { font-size: clamp(28px, 3.3vw, 40px); line-height: 1.14; letter-spacing: -.02em; margin: 0; max-width: none; }
     h1 br { display: block; }
     h1 .grad { background: linear-gradient(120deg, var(--accent), #8b5cf6); -webkit-background-clip: text; background-clip: text; color: transparent; }
-    .sub { font-size: clamp(16px, 2.1vw, 19px); color: var(--ink-2); margin: 22px 0 0; max-width: 46ch; }
+    .sub { font-size: clamp(16px, 2.1vw, 19px); color: var(--ink-2); margin: 16px 0 0; max-width: 46ch; }
 
     /* Form */
     .intake { margin-top: 0; max-width: none; }
@@ -159,9 +159,8 @@
         <div class="hero-grid">
           <!-- Left: messaging -->
           <div class="hero-copy">
-            <span class="eyebrow"><span class="pulse"></span> Public tenders, on autopilot</span>
-            <h1>Every week, the tenders <span class="grad">you<br>should bid on</span>, in your inbox.</h1>
-            <p class="sub">Trawling procurement portals is a full-time job. So we do it for you — we learn what your business actually does, then email you a short list of the contracts you can realistically win. Every Monday. No logins, no dashboards, no noise. Something off? Just reply.</p>
+            <h1>The tenders <span class="grad">you should<br>bid on</span>, in your inbox.</h1>
+            <p class="sub">Trawling procurement portals is a full-time job — so we do it for you. Every Monday, a shortlist of the contracts you can actually win.</p>
             <div class="trust">
               <span><!-- lucide: lock-open --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg> No password, no account</span>
               <span><!-- lucide: mail --><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg> Everything happens over email</span>

@@ -129,3 +129,87 @@ ${sectorsHtml}
 </table>
 </body></html>`;
 }
+
+// Confirmation email, sent after the user confirms their profile. The tender
+// matches are intentional EMPTY placeholders (animated skeleton, "arriving
+// Monday") — the real MCP results get wired in later. No dynamic data yet, so
+// this is a static string. Shimmer is pure CSS (animates in Apple Mail/iOS;
+// static grey bars elsewhere via the inline background-color fallback).
+export function confirmEmailHtml(): string {
+  return `<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting"><title>Profile confirmed</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap');
+@keyframes sk-shimmer { 0% { background-position: 180% 0; } 100% { background-position: -180% 0; } }
+.sk { background-image: linear-gradient(90deg,#e5e8f0 0%,#f2f4f9 50%,#e5e8f0 100%); background-size:180% 100%; animation: sk-shimmer 1.5s ease-in-out infinite; border-radius:6px; }
+</style></head>
+<body style="margin:0; padding:0; background:#eceef3; font-family:'Lato','Helvetica Neue',Helvetica,Arial,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr><td align="center" style="padding:30px 12px;">
+<table role="presentation" width="760" cellpadding="0" cellspacing="0" border="0" style="width:760px; max-width:760px; background:#ffffff; border-radius:16px; overflow:hidden; border:1px solid #dfe3ec;">
+
+  <tr><td style="padding:16px 36px; border-bottom:1px solid #eef0f5;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td style="vertical-align:middle;">
+        <span style="display:inline-block; width:27px; height:27px; background:#4f46e5; background-image:linear-gradient(135deg,#4f46e5,#7c5cf0); border-radius:7px; color:#fff; font-size:17px; text-align:center; line-height:27px; vertical-align:middle;">&#9678;</span>
+        <span style="font-size:15px; font-weight:700; color:#0b1220; vertical-align:middle; padding-left:9px;">Radar</span>
+        <span style="font-size:12px; color:#90a1b9; vertical-align:middle;">&nbsp;by AHI</span>
+      </td>
+      <td align="right" style="vertical-align:middle;"><span style="display:inline-block; background:#ecfdf5; color:#047857; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; padding:4px 10px; border-radius:999px;">&#10003; Confirmed</span></td>
+    </tr></table>
+  </td></tr>
+
+  <tr><td style="padding:28px 36px 4px;">
+    <h1 style="margin:0; font-size:24px; line-height:1.25; color:#0b1220; font-weight:900;">You're all set &mdash; profile confirmed.</h1>
+    <p style="margin:10px 0 0; font-size:15px; line-height:1.6; color:#3a4553;">We're scanning public tenders that match your profile right now. Your first shortlist lands <b>Monday</b> — this is where they'll show up.</p>
+  </td></tr>
+
+  <tr><td style="padding:22px 36px 6px;">
+    <p style="margin:0 0 12px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:#90a1b9; font-weight:700;">Your matches &mdash; arriving Monday</p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;"><tr>
+      <td width="32%" valign="top" style="background:#f7f8fc; border:1px solid #eef0f5; border-radius:12px; padding:16px 15px;">
+        <div class="sk" style="height:12px; width:80%; background-color:#e5e8f0; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:94%; background-color:#e9ecf2; margin-top:12px; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:52%; background-color:#e9ecf2; margin-top:8px; font-size:0; line-height:0;">&nbsp;</div>
+      </td>
+      <td width="2%" style="font-size:0; line-height:0;">&nbsp;</td>
+      <td width="32%" valign="top" style="background:#f7f8fc; border:1px solid #eef0f5; border-radius:12px; padding:16px 15px;">
+        <div class="sk" style="height:12px; width:68%; background-color:#e5e8f0; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:90%; background-color:#e9ecf2; margin-top:12px; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:60%; background-color:#e9ecf2; margin-top:8px; font-size:0; line-height:0;">&nbsp;</div>
+      </td>
+      <td width="2%" style="font-size:0; line-height:0;">&nbsp;</td>
+      <td width="32%" valign="top" style="background:#f7f8fc; border:1px solid #eef0f5; border-radius:12px; padding:16px 15px;">
+        <div class="sk" style="height:12px; width:74%; background-color:#e5e8f0; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:88%; background-color:#e9ecf2; margin-top:12px; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:46%; background-color:#e9ecf2; margin-top:8px; font-size:0; line-height:0;">&nbsp;</div>
+      </td>
+    </tr></table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+      <td width="32%" valign="top" style="background:#f7f8fc; border:1px solid #eef0f5; border-radius:12px; padding:16px 15px;">
+        <div class="sk" style="height:12px; width:72%; background-color:#e5e8f0; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:92%; background-color:#e9ecf2; margin-top:12px; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:50%; background-color:#e9ecf2; margin-top:8px; font-size:0; line-height:0;">&nbsp;</div>
+      </td>
+      <td width="2%" style="font-size:0; line-height:0;">&nbsp;</td>
+      <td width="32%" valign="top" style="background:#f7f8fc; border:1px solid #eef0f5; border-radius:12px; padding:16px 15px;">
+        <div class="sk" style="height:12px; width:78%; background-color:#e5e8f0; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:86%; background-color:#e9ecf2; margin-top:12px; font-size:0; line-height:0;">&nbsp;</div>
+        <div class="sk" style="height:9px; width:58%; background-color:#e9ecf2; margin-top:8px; font-size:0; line-height:0;">&nbsp;</div>
+      </td>
+      <td width="34%" style="font-size:0; line-height:0;">&nbsp;</td>
+    </tr></table>
+  </td></tr>
+
+  <tr><td style="padding:20px 36px 8px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f4ff; border:1px solid #e0e3fb; border-radius:12px;"><tr><td style="padding:15px 17px;">
+      <p style="margin:0; font-size:14px; line-height:1.55; color:#3a3550;"><b style="color:#0b1220;">Your full shortlist arrives Monday.</b> Reply anytime to tweak your focus — add a sector, change your size, or pause.</p>
+    </td></tr></table>
+  </td></tr>
+
+  <tr><td style="padding:14px 36px 26px;"><p style="margin:0; font-size:12px; color:#a5adba;">Radar by AHI &nbsp;&middot;&nbsp; You confirmed your profile, so we'll email you matching tenders. Reply "stop" to pause.</p></td></tr>
+</table>
+</td></tr></table>
+</body></html>`;
+}

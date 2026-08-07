@@ -1,7 +1,7 @@
 import { FirestoreClient } from "./firestore";
 import { researchCompany, draftProfile, interpretReply, type DraftProfileFields, type TokenUsage } from "./gemini";
 import { sendEmail, type SendEmailBinding, type SendEmailOptions } from "./email";
-import { draftProfileHtml } from "./email-template";
+import { draftProfileHtml, confirmEmailHtml } from "./email-template";
 // Deprecated 2026-08-05 — replaced by ./email (Cloudflare's native send_email binding).
 // Kept working, not deleted, in case of rollback. See wrangler.toml for the matching
 // commented-out vars.
@@ -262,6 +262,7 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
       to: payload.from,
       subject: `Re: ${payload.subject ?? "your profile"}`,
       text: `${interpretation.replyMessage}${handoffNote}`,
+      html: confirmEmailHtml(),
       inReplyTo: payload.messageId ?? undefined,
       references: payload.messageId ?? undefined,
     });
