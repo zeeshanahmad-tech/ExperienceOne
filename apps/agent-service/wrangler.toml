@@ -13,6 +13,14 @@ name = "EMAIL"
 [vars]
 AGENT_EMAIL_ADDRESS = "labs@onboard.ahiapp.ai"
 AHI_MCP_URL = "https://connect.ahiapp.ai/mcp"
+# Registered by scripts/sync-agent.mjs — not a secret, just an identifier.
+GEMINI_AGENT_ID = "exp1-company-researcher"
+
+# Drives reconcilePendingProfiles (onboarding.ts) — the only way a research job's completion is
+# ever detected, since there's no webhook. Every 2 minutes is cheap (Gemini bills these jobs by
+# token usage, not by how often we check status) and keeps the wait short.
+[triggers]
+crons = ["*/2 * * * *"]
 
 # Deprecated 2026-08-05 — replaced by the send_email binding above (labs@onboard.ahiapp.ai
 # now sends and receives on the same address, so RESEND_SENDING_DOMAIN/REPLY_TO_ADDRESS's

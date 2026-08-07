@@ -1,6 +1,13 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { handleInboundEmail, handleWebIntake, validateWorkEmail, type Env, type InboundEmailPayload } from "./onboarding";
+import {
+  handleInboundEmail,
+  handleWebIntake,
+  reconcilePendingProfiles,
+  validateWorkEmail,
+  type Env,
+  type InboundEmailPayload,
+} from "./onboarding";
 
 export type { Env };
 
@@ -51,4 +58,30 @@ app.post("/web-intake", async (c) => {
   }
 });
 
-export default app;
+// Manual trigger for the check-in pass — same bearer-token gate as /inbound-email — so it can be
+// tested on demand instead of waiting for the real cron schedule.
+app.post("/admin/reconcile", async (c) => {
+  const token = c.req.header("authorization")?.replace("Bearer ", "");
+  if (token !== c.env.WORKER_SHARED_TOKEN) {
+    return c.json({ error: "unauthorized" }, 401);
+  }
+  try {
+    const result = await reconcilePendingProfiles(c.env);
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("reconcile failed", err);
+    return c.json({ error: "internal_error", detail: String(err) }, 500);
+  }
+});
+
+export default {
+  fetch: app.fetch,
+  // Runs automatically on the cron schedule in wrangler.toml — checks every "processing"
+  // profile's research job and finishes, retries, or fails it. No webhook involved; see
+  // IMPLEMENTATION_PLAN.md for why polling-only was chosen.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(
+      reconcilePendingProfiles(env).catch((err) => console.error("scheduled reconcile failed", err))
+    );
+  },
+};

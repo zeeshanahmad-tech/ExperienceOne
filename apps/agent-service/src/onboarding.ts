@@ -1,5 +1,14 @@
 import { FirestoreClient } from "./firestore";
-import { researchCompany, draftProfile, interpretReply, type DraftProfileFields, type TokenUsage } from "./gemini";
+import { draftProfile, interpretReply, type CompanyResearch, type DraftProfileFields, type TokenUsage } from "./gemini";
+import {
+  createResearchInteraction,
+  getInteraction,
+  classifyInteractionStatus,
+  extractInteractionText,
+  extractInteractionSourceUrls,
+  extractInteractionUsageSummary,
+  type InteractionResult,
+} from "./geminiAgent";
 import { sendEmail, type SendEmailBinding, type SendEmailOptions } from "./email";
 // Deprecated 2026-08-05 — replaced by ./email (Cloudflare's native send_email binding).
 // Kept working, not deleted, in case of rollback. See wrangler.toml for the matching
@@ -10,6 +19,7 @@ import { queryTenderMcp } from "./mcp";
 export interface Env {
   WORKER_SHARED_TOKEN: string;
   GEMINI_API_KEY: string;
+  GEMINI_AGENT_ID: string;
   EMAIL: SendEmailBinding;
   AGENT_EMAIL_ADDRESS: string;
   FIREBASE_SERVICE_ACCOUNT_JSON: string;
@@ -32,14 +42,23 @@ export interface InboundEmailPayload {
   references: string | null;
 }
 
-type ProfileStatus = "draft" | "awaiting_confirmation" | "confirmed" | "handed_off";
+// "processing": research job handed off, waiting on a check-in (see reconcilePendingProfiles) to
+// find it done. "processing_failed": retried the maximum number of times, or hit a hard limit,
+// and the user's already been told — not left hanging. Treated like "doesn't exist yet" by the
+// intake guards below, so a fresh email can restart a failed attempt.
+type ProfileStatus = "processing" | "awaiting_confirmation" | "confirmed" | "handed_off" | "processing_failed";
+
+const MAX_RESEARCH_RETRIES = 5;
 
 interface ProfileDoc {
   domain: string;
   contactEmail: string;
-  profile: DraftProfileFields;
+  profile: DraftProfileFields | null;
   sourceUrls: string[];
   status: ProfileStatus;
+  pendingInteractionId: string | null;
+  retryCount: number;
+  lastError: string | null;
   rootMessageId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -127,20 +146,32 @@ async function recordMessage(
   });
 }
 
-async function draftAndSaveProfile(db: FirestoreClient, env: Env, domainKey: string, contactEmail: string, rootMessageId: string | null): Promise<ProfileDoc> {
-  const research = await callGeminiLogged(db, domainKey, `researchCompany(${domainKey})`, () =>
-    researchCompany(env.GEMINI_API_KEY, domainKey)
-  );
-  const drafted = await callGeminiLogged(db, domainKey, `draftProfile(${domainKey})`, () =>
-    draftProfile(env.GEMINI_API_KEY, domainKey, research)
-  );
+/**
+ * Kicks off the research agent job and saves a "processing" record — does NOT wait for research
+ * to finish. The actual draft (structuring the agent's findings + emailing it) happens later,
+ * from reconcilePendingProfiles, once the job is done. This is what lets both /web-intake and
+ * /inbound-email respond quickly instead of blocking for however long research takes.
+ */
+async function startResearch(db: FirestoreClient, env: Env, domainKey: string, contactEmail: string, rootMessageId: string | null): Promise<ProfileDoc> {
+  let interactionId: string;
+  try {
+    const interaction = await createResearchInteraction(env.GEMINI_API_KEY, env.GEMINI_AGENT_ID, domainKey);
+    interactionId = interaction.id;
+    await logEvent(db, domainKey, "gemini_call", `createResearchInteraction(${domainKey}) -> ${interactionId}`, true);
+  } catch (err) {
+    await logEvent(db, domainKey, "gemini_call", `createResearchInteraction(${domainKey}) failed: ${String(err)}`, false);
+    throw err;
+  }
 
   const doc: ProfileDoc = {
     domain: domainKey,
     contactEmail,
-    profile: drafted.profile,
-    sourceUrls: research.sourceUrls,
-    status: "awaiting_confirmation",
+    profile: null,
+    sourceUrls: [],
+    status: "processing",
+    pendingInteractionId: interactionId,
+    retryCount: 0,
+    lastError: null,
     rootMessageId,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -160,9 +191,11 @@ function formatProfileForEmail(profile: DraftProfileFields): string {
   return lines.length ? lines.join("\n") : "We couldn't find much public information about your company yet — feel free to fill in the gaps yourself.";
 }
 
+/** Only ever called once research has completed and `doc.profile` is populated. */
 async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, opts: { inReplyTo?: string; references?: string }) {
+  const profile = doc.profile!;
   const body =
-    `Here's what we found about your company:\n\n${formatProfileForEmail(doc.profile)}\n\n` +
+    `Here's what we found about your company:\n\n${formatProfileForEmail(profile)}\n\n` +
     `Reply to this email to confirm it's right, or tell us what to change.`;
   await sendEmailLogged(db, doc.domain, `draft profile to ${doc.contactEmail}`, env.EMAIL, {
     from: env.AGENT_EMAIL_ADDRESS,
@@ -174,16 +207,141 @@ async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, op
   });
 }
 
+/** Runs once a research job's interaction has reached "completed" — structures the agent's free
+ * text into our exact profile shape (the safety net the agent's own JSON instruction isn't
+ * guaranteed to satisfy), saves the profile, and sends the draft. */
+async function completeResearch(db: FirestoreClient, env: Env, domainKey: string, doc: ProfileDoc, interaction: InteractionResult): Promise<void> {
+  const text = extractInteractionText(interaction);
+  await logEvent(db, domainKey, "gemini_call", `agent research for ${domainKey} completed (${extractInteractionUsageSummary(interaction)})`, true);
+
+  const research: CompanyResearch = {
+    text,
+    sourceUrls: extractInteractionSourceUrls(interaction),
+    usage: { promptTokenCount: 0, candidatesTokenCount: 0, toolUsePromptTokenCount: 0, totalTokenCount: 0 },
+  };
+  const drafted = await callGeminiLogged(db, domainKey, `draftProfile(${domainKey})`, () => draftProfile(env.GEMINI_API_KEY, domainKey, research));
+
+  const updated: ProfileDoc = {
+    ...doc,
+    profile: drafted.profile,
+    sourceUrls: research.sourceUrls,
+    status: "awaiting_confirmation",
+    pendingInteractionId: null,
+    updatedAt: new Date().toISOString(),
+  };
+  await db.set(`profiles/${domainKey}`, updated as unknown as Record<string, unknown>);
+  await sendDraftEmail(db, env, updated, { inReplyTo: doc.rootMessageId ?? undefined, references: doc.rootMessageId ?? undefined });
+}
+
+/**
+ * A research job ended badly (real error) or hit a hard limit (quota). Hard limits and
+ * exhausted retries both give up immediately and tell the user; anything else retries with a
+ * fresh job, up to MAX_RESEARCH_RETRIES. Returns true if the profile was marked failed.
+ */
+async function handleResearchFailure(db: FirestoreClient, env: Env, domainKey: string, doc: ProfileDoc, reason: string, isHardLimit: boolean): Promise<boolean> {
+  await logEvent(db, domainKey, "gemini_call", `research for ${domainKey} ${reason}`, false);
+
+  const nextRetryCount = doc.retryCount + 1;
+  if (isHardLimit || nextRetryCount > MAX_RESEARCH_RETRIES) {
+    await db.update(`profiles/${domainKey}`, {
+      status: "processing_failed",
+      lastError: reason,
+      updatedAt: new Date().toISOString(),
+    });
+    await sendEmailLogged(db, domainKey, `research-failed apology to ${doc.contactEmail}`, env.EMAIL, {
+      from: env.AGENT_EMAIL_ADDRESS,
+      to: doc.contactEmail,
+      subject: "We hit a snag putting your profile together",
+      text: "Something went wrong while researching your company, and we weren't able to finish. Reply to this email (or send a new one) and we'll try again.",
+    });
+    return true;
+  }
+
+  try {
+    const interaction = await createResearchInteraction(env.GEMINI_API_KEY, env.GEMINI_AGENT_ID, domainKey);
+    await db.update(`profiles/${domainKey}`, {
+      pendingInteractionId: interaction.id,
+      retryCount: nextRetryCount,
+      lastError: reason,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Couldn't even start the retry — leave retryCount as-is so the next check-in tries again
+    // instead of silently losing this profile.
+    await logEvent(db, domainKey, "gemini_call", `retry ${nextRetryCount} for ${domainKey} failed to start: ${String(err)}`, false);
+  }
+  return false;
+}
+
+/**
+ * Runs on a timer (see index.ts's scheduled() export). Looks at every profile still "processing"
+ * and checks in on its research job — this is the ONLY way completion is detected, there's no
+ * webhook. See IMPLEMENTATION_PLAN.md / the plan doc for why polling-only was chosen over a
+ * webhook+backup design.
+ */
+export async function reconcilePendingProfiles(env: Env): Promise<{ checked: number; completed: number; retried: number; failed: number }> {
+  const db = firestoreFor(env);
+  const all = await db.list("profiles");
+  const pending = all.filter((p) => (p.data as unknown as ProfileDoc).status === "processing");
+
+  let completed = 0;
+  let retried = 0;
+  let failed = 0;
+
+  for (const { id: domainKey, data } of pending) {
+    const doc = data as unknown as ProfileDoc;
+    if (!doc.pendingInteractionId) {
+      await logEvent(db, domainKey, "gemini_call", `${domainKey} is "processing" with no pendingInteractionId — skipping`, false);
+      continue;
+    }
+
+    let interaction: InteractionResult;
+    try {
+      interaction = await getInteraction(env.GEMINI_API_KEY, doc.pendingInteractionId);
+    } catch (err) {
+      // Transient hiccup checking status, not the job's own failure — try again next round.
+      await logEvent(db, domainKey, "gemini_call", `getInteraction(${doc.pendingInteractionId}) failed: ${String(err)}`, false);
+      continue;
+    }
+
+    const outcome = classifyInteractionStatus(interaction.status);
+    if (outcome === "running") continue;
+
+    if (outcome === "done") {
+      try {
+        await completeResearch(db, env, domainKey, doc, interaction);
+        completed++;
+      } catch (err) {
+        // Research itself succeeded but structuring/saving/emailing failed — still retryable.
+        await handleResearchFailure(db, env, domainKey, doc, `post-completion step failed: ${String(err)}`, false);
+        retried++;
+      }
+      continue;
+    }
+
+    const isHardLimit = outcome === "hard_limit";
+    const gaveUp = await handleResearchFailure(
+      db, env, domainKey, doc,
+      `interaction ${doc.pendingInteractionId} ended with status "${interaction.status}"`,
+      isHardLimit
+    );
+    if (gaveUp) failed++; else retried++;
+  }
+
+  return { checked: pending.length, completed, retried, failed };
+}
+
 /** Web front door — same enrichment path, entered from the marketing page instead of an inbound email. */
 export async function handleWebIntake(env: Env, email: string): Promise<void> {
   const domainKey = domainOf(email);
   const db = firestoreFor(env);
 
-  const existing = await db.get(`profiles/${domainKey}`);
-  if (existing) return; // already onboarded or in progress — don't restart the flow
+  const existing = (await db.get(`profiles/${domainKey}`)) as ProfileDoc | null;
+  // A "processing_failed" record is treated like "doesn't exist yet" — a fresh submission gets
+  // to retry rather than being permanently stuck on one failed attempt.
+  if (existing && existing.status !== "processing_failed") return;
 
-  const doc = await draftAndSaveProfile(db, env, domainKey, email, null);
-  await sendDraftEmail(db, env, doc, {});
+  await startResearch(db, env, domainKey, email, null);
   await logEvent(db, domainKey, "web_intake", `web intake for ${email}`, true);
 }
 
@@ -203,11 +361,23 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
 
   const existing = (await db.get(`profiles/${domainKey}`)) as ProfileDoc | null;
 
-  // No profile yet for this domain — brand new, or a cold forward with zero prior context.
-  // Either way, the domain is the only anchor we trust; start the flow fresh.
-  if (!existing) {
-    const doc = await draftAndSaveProfile(db, env, domainKey, payload.from, payload.messageId);
-    await sendDraftEmail(db, env, doc, { inReplyTo: payload.messageId ?? undefined, references: payload.messageId ?? undefined });
+  // No usable profile yet for this domain — brand new, a cold forward with zero prior context,
+  // or a previous attempt that failed. Either way, the domain is the only anchor we trust; start fresh.
+  if (!existing || existing.status === "processing_failed") {
+    await startResearch(db, env, domainKey, payload.from, payload.messageId);
+    return; // no email sent yet — reconcilePendingProfiles sends the draft once research completes
+  }
+
+  if (existing.status === "processing") {
+    // The job might genuinely still be running when someone replies (wasn't possible before, when
+    // everything ran synchronously) — don't try to interpret a reply against an unfinished profile.
+    await sendEmailLogged(db, domainKey, `still-processing ack to ${payload.from}`, env.EMAIL, {
+      from: env.AGENT_EMAIL_ADDRESS,
+      to: payload.from,
+      subject: `Re: ${payload.subject ?? "your profile"}`,
+      text: "Still putting your profile together — we'll follow up shortly with what we found.",
+      inReplyTo: payload.messageId ?? undefined,
+    });
     return;
   }
 
@@ -223,13 +393,15 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
     return;
   }
 
-  // Reply in the confirm/refine loop.
+  // Reply in the confirm/refine loop — only reachable once research has finished (guards above
+  // handle processing/processing_failed/handed_off/confirmed), so profile is always populated here.
+  const profile = existing.profile!;
   const { interpretation } = await callGeminiLogged(db, domainKey, `interpretReply(${domainKey})`, () =>
-    interpretReply(env.GEMINI_API_KEY, existing.profile, payload.text ?? "")
+    interpretReply(env.GEMINI_API_KEY, profile, payload.text ?? "")
   );
 
   if (interpretation.intent === "edit" && interpretation.updates) {
-    const mergedProfile: DraftProfileFields = { ...existing.profile, ...interpretation.updates };
+    const mergedProfile: DraftProfileFields = { ...profile, ...interpretation.updates };
     await db.update(`profiles/${domainKey}`, { profile: mergedProfile, updatedAt: new Date().toISOString() });
     await sendEmailLogged(db, domainKey, `edit reply to ${payload.from}`, env.EMAIL, {
       from: env.AGENT_EMAIL_ADDRESS,
@@ -247,8 +419,8 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
 
     let handoffNote = "";
     try {
-      const mcpResult = await queryTenderMcp(env.AHI_MCP_URL, existing.profile.keywords ?? []);
-      await logEvent(db, domainKey, "mcp_query", `demo query with keywords=${(existing.profile.keywords ?? []).join(",")}`, true);
+      const mcpResult = await queryTenderMcp(env.AHI_MCP_URL, profile.keywords ?? []);
+      await logEvent(db, domainKey, "mcp_query", `demo query with keywords=${(profile.keywords ?? []).join(",")}`, true);
       handoffNote = mcpResult ? "\n\nAs a preview, we already found some relevant tenders based on your profile — your first full report is on its way." : "";
     } catch (err) {
       await logEvent(db, domainKey, "mcp_query", `demo query failed: ${String(err)}`, false);

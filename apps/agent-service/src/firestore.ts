@@ -137,4 +137,24 @@ export class FirestoreClient {
     const res = await this.request("POST", collectionPath, { fields: toFirestoreFields(data) });
     if (!res.ok) throw new Error(`Firestore ADD ${collectionPath} failed: ${res.status} ${await res.text()}`);
   }
+
+  /** Lists every document in a top-level collection (used to scan `profiles` for anything stuck "processing"). */
+  async list(collectionPath: string): Promise<Array<{ id: string; data: Record<string, unknown> }>> {
+    const results: Array<{ id: string; data: Record<string, unknown> }> = [];
+    let pageToken: string | undefined;
+    do {
+      const qs = pageToken ? `?pageToken=${encodeURIComponent(pageToken)}` : "";
+      const res = await this.request("GET", `${collectionPath}${qs}`);
+      if (!res.ok) throw new Error(`Firestore LIST ${collectionPath} failed: ${res.status} ${await res.text()}`);
+      const json = (await res.json()) as {
+        documents?: Array<{ name: string; fields?: Record<string, FirestoreValue> }>;
+        nextPageToken?: string;
+      };
+      for (const doc of json.documents ?? []) {
+        results.push({ id: doc.name.split("/").pop()!, data: fromFirestoreFields(doc.fields ?? {}) });
+      }
+      pageToken = json.nextPageToken;
+    } while (pageToken);
+    return results;
+  }
 }
