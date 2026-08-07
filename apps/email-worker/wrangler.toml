@@ -7,3 +7,9 @@ compatibility_date = "2025-01-01"
 # (see .dev.vars.example) rather than committing a real value here.
 [vars]
 AGENT_SERVICE_URL = "https://experience-one-agent-service.jd-ad0.workers.dev"
+
+# Workers Logs — same as agent-service's wrangler.toml. Especially useful here since this
+# Worker has no HTTP endpoint of its own to poke at; logs are the only window into what
+# happened on a given inbound email.
+[observability]
+enabled = true

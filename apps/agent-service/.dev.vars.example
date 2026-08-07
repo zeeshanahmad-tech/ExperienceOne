@@ -12,3 +12,7 @@ WORKER_SHARED_TOKEN=
 
 # Firestore access (Firebase Spark plan project) — service account JSON, single-line
 FIREBASE_SERVICE_ACCOUNT_JSON=
+
+# Experience 2's tender-report-agent — shared with us privately, not in PROFILE_API.md on purpose.
+# Paste the real value here for local testing; ask a teammate for it, don't generate your own.
+TENDER_REPORT_AGENT_API_KEY=

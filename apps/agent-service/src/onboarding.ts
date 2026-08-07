@@ -7,6 +7,7 @@ import { draftProfileHtml, confirmEmailHtml } from "./email-template";
 // commented-out vars.
 // import { sendEmail, type SendEmailOptions } from "./resend";
 import { queryTenderMcp } from "./mcp";
+import { sendConfirmedProfile } from "./reportAgent";
 
 export interface Env {
   WORKER_SHARED_TOKEN: string;
@@ -15,6 +16,8 @@ export interface Env {
   AGENT_EMAIL_ADDRESS: string;
   FIREBASE_SERVICE_ACCOUNT_JSON: string;
   AHI_MCP_URL: string;
+  TENDER_REPORT_AGENT_URL: string;
+  TENDER_REPORT_AGENT_API_KEY: string;
   // Deprecated 2026-08-05 — see wrangler.toml. Left declared here so restoring the Resend
   // path back doesn't also require re-adding these.
   // RESEND_API_KEY: string;
@@ -73,7 +76,7 @@ function firestoreFor(env: Env): FirestoreClient {
 async function logEvent(
   db: FirestoreClient,
   domainKey: string,
-  type: "inbound_email" | "web_intake" | "gemini_call" | "resend_send" | "mcp_query",
+  type: "inbound_email" | "web_intake" | "gemini_call" | "resend_send" | "mcp_query" | "report_agent_post",
   payloadSummary: string,
   ok: boolean,
   tokenUsage?: TokenUsage
@@ -161,6 +164,23 @@ function formatProfileForEmail(profile: DraftProfileFields): string {
   return lines.length ? lines.join("\n") : "We couldn't find much public information about your company yet — feel free to fill in the gaps yourself.";
 }
 
+/**
+ * Merges a reply's requested field updates into the current profile. Unlike the string fields
+ * (companyName/industry/size/summary), sectors/keywords aren't marked nullable in REPLY_SCHEMA —
+ * Gemini has no way to say "nothing to change here" for an array field other than returning `[]`,
+ * so a plain object spread would silently wipe out real sectors/keywords on every edit that
+ * doesn't happen to mention them. Treat an empty array in `updates` as "no change," not "clear it."
+ */
+function applyProfileUpdates(profile: DraftProfileFields, updates: Partial<DraftProfileFields>): DraftProfileFields {
+  const merged = { ...profile };
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === null || value === undefined) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    (merged as Record<string, unknown>)[key] = value;
+  }
+  return merged;
+}
+
 async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, opts: { inReplyTo?: string; references?: string }) {
   const body =
     `Here's what we found about your company:\n\n${formatProfileForEmail(doc.profile)}\n\n` +
@@ -173,6 +193,79 @@ async function sendDraftEmail(db: FirestoreClient, env: Env, doc: ProfileDoc, op
     html: draftProfileHtml(doc.profile),
     inReplyTo: opts.inReplyTo,
     references: opts.references,
+  });
+}
+
+/**
+ * Runs once a reply either confirms the profile as-is or asks for a change — both are now
+ * treated as final immediately, deliberately not a multi-round "keep refining" loop: apply the
+ * edit if there is one, hand off to Experience 2, run the one demo MCP query, and send the
+ * confirmation email. `wasEdited` only changes the confirmation email's wording, not the steps.
+ */
+async function finalizeConfirmedProfile(
+  db: FirestoreClient,
+  env: Env,
+  domainKey: string,
+  existing: ProfileDoc,
+  profile: DraftProfileFields,
+  payload: InboundEmailPayload,
+  wasEdited: boolean
+): Promise<void> {
+  const confirmedAt = new Date().toISOString();
+  await db.update(`profiles/${domainKey}`, { profile, status: "confirmed", updatedAt: confirmedAt });
+
+  // Hand off to Experience 2 exactly once, right here — this is the one moment PROFILE_API.md
+  // itself names as the trigger ("post again when the status becomes confirmed").
+  try {
+    const result = await sendConfirmedProfile(env.TENDER_REPORT_AGENT_URL, env.TENDER_REPORT_AGENT_API_KEY, {
+      domain: existing.domain,
+      contactEmail: existing.contactEmail,
+      profile,
+      sourceUrls: existing.sourceUrls,
+      status: "confirmed",
+      rootMessageId: existing.rootMessageId,
+      createdAt: existing.createdAt,
+      updatedAt: confirmedAt,
+    });
+    await logEvent(
+      db, domainKey, "report_agent_post",
+      result.ok
+        ? `POST /profile -> ${result.status}, willReceiveWeeklyReports=${result.willReceiveWeeklyReports}${result.note ? `, note: ${result.note}` : ""}`
+        // On failure, log the full response body — a bare status code isn't enough to diagnose
+        // a 400 without re-running the whole pipeline (this is exactly the gap that made the
+        // first real failure a guessing game instead of a quick fix).
+        : `POST /profile -> ${result.status}, body: ${JSON.stringify(result.body)}`,
+      result.ok
+    );
+  } catch (err) {
+    // Experience 2 being unreachable shouldn't block our own confirmation email — log and move
+    // on, same pattern as the MCP demo query just below.
+    await logEvent(db, domainKey, "report_agent_post", `POST /profile failed: ${String(err)}`, false);
+  }
+
+  let handoffNote = "";
+  try {
+    const mcpResult = await queryTenderMcp(env.AHI_MCP_URL, profile.keywords ?? []);
+    await logEvent(db, domainKey, "mcp_query", `demo query with keywords=${(profile.keywords ?? []).join(",")}`, true);
+    handoffNote = mcpResult ? "\n\nAs a preview, we already found some relevant tenders based on your profile — your first full report is on its way." : "";
+  } catch (err) {
+    await logEvent(db, domainKey, "mcp_query", `demo query failed: ${String(err)}`, false);
+  }
+
+  await db.update(`profiles/${domainKey}`, { status: "handed_off", updatedAt: new Date().toISOString() });
+
+  const text = wasEdited
+    ? `We've updated your profile — you're all set, it's confirmed. You'll start receiving public tenders that match your profile.${handoffNote}`
+    : `You're all set — your profile is confirmed. You'll start receiving public tenders that match your profile.${handoffNote}`;
+
+  await sendEmailLogged(db, domainKey, `handoff confirmation to ${payload.from}`, env.EMAIL, {
+    from: env.AGENT_EMAIL_ADDRESS,
+    to: payload.from,
+    subject: `Re: ${payload.subject ?? "your profile"}`,
+    text,
+    html: confirmEmailHtml(wasEdited),
+    inReplyTo: payload.messageId ?? undefined,
+    references: payload.messageId ?? undefined,
   });
 }
 
@@ -225,47 +318,21 @@ export async function handleInboundEmail(env: Env, payload: InboundEmailPayload)
     return;
   }
 
-  // Reply in the confirm/refine loop.
+  // Reply either confirms the profile as-is or asks for a change — either way this finalizes it
+  // immediately (see finalizeConfirmedProfile). Deliberately not a multi-round "keep refining"
+  // loop: one reply is enough, whether it's "yes" or "actually, it's X".
   const { interpretation } = await callGeminiLogged(db, domainKey, `interpretReply(${domainKey})`, () =>
     interpretReply(env.GEMINI_API_KEY, existing.profile, payload.text ?? "")
   );
 
   if (interpretation.intent === "edit" && interpretation.updates) {
-    const mergedProfile: DraftProfileFields = { ...existing.profile, ...interpretation.updates };
-    await db.update(`profiles/${domainKey}`, { profile: mergedProfile, updatedAt: new Date().toISOString() });
-    await sendEmailLogged(db, domainKey, `edit reply to ${payload.from}`, env.EMAIL, {
-      from: env.AGENT_EMAIL_ADDRESS,
-      to: payload.from,
-      subject: `Re: ${payload.subject ?? "your profile"}`,
-      text: `${interpretation.replyMessage}\n\nUpdated profile:\n\n${formatProfileForEmail(mergedProfile)}\n\nReply to confirm, or keep refining.`,
-      inReplyTo: payload.messageId ?? undefined,
-      references: payload.messageId ?? undefined,
-    });
+    const mergedProfile = applyProfileUpdates(existing.profile, interpretation.updates);
+    await finalizeConfirmedProfile(db, env, domainKey, existing, mergedProfile, payload, true);
     return;
   }
 
   if (interpretation.intent === "confirm") {
-    await db.update(`profiles/${domainKey}`, { status: "confirmed", updatedAt: new Date().toISOString() });
-
-    let handoffNote = "";
-    try {
-      const mcpResult = await queryTenderMcp(env.AHI_MCP_URL, existing.profile.keywords ?? []);
-      await logEvent(db, domainKey, "mcp_query", `demo query with keywords=${(existing.profile.keywords ?? []).join(",")}`, true);
-      handoffNote = mcpResult ? "\n\nAs a preview, we already found some relevant tenders based on your profile — your first full report is on its way." : "";
-    } catch (err) {
-      await logEvent(db, domainKey, "mcp_query", `demo query failed: ${String(err)}`, false);
-    }
-
-    await db.update(`profiles/${domainKey}`, { status: "handed_off", updatedAt: new Date().toISOString() });
-    await sendEmailLogged(db, domainKey, `handoff confirmation to ${payload.from}`, env.EMAIL, {
-      from: env.AGENT_EMAIL_ADDRESS,
-      to: payload.from,
-      subject: `Re: ${payload.subject ?? "your profile"}`,
-      text: `${interpretation.replyMessage}${handoffNote}`,
-      html: confirmEmailHtml(),
-      inReplyTo: payload.messageId ?? undefined,
-      references: payload.messageId ?? undefined,
-    });
+    await finalizeConfirmedProfile(db, env, domainKey, existing, existing.profile, payload, false);
     return;
   }
 

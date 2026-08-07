@@ -135,7 +135,10 @@ ${sectorsHtml}
 // Monday") — the real MCP results get wired in later. No dynamic data yet, so
 // this is a static string. Shimmer is pure CSS (animates in Apple Mail/iOS;
 // static grey bars elsewhere via the inline background-color fallback).
-export function confirmEmailHtml(): string {
+export function confirmEmailHtml(wasEdited: boolean): string {
+  const heading = wasEdited
+    ? "We've updated your profile &mdash; you're all set, confirmed."
+    : "You're all set &mdash; profile confirmed.";
   return `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -161,7 +164,7 @@ export function confirmEmailHtml(): string {
   </td></tr>
 
   <tr><td style="padding:28px 36px 4px;">
-    <h1 style="margin:0; font-size:24px; line-height:1.25; color:#0b1220; font-weight:900;">You're all set &mdash; profile confirmed.</h1>
+    <h1 style="margin:0; font-size:24px; line-height:1.25; color:#0b1220; font-weight:900;">${heading}</h1>
     <p style="margin:10px 0 0; font-size:15px; line-height:1.6; color:#3a4553;">We're scanning public tenders that match your profile right now. Your first shortlist lands <b>Monday</b> — this is where they'll show up.</p>
   </td></tr>
 
