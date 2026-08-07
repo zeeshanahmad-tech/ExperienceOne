@@ -71,7 +71,7 @@ export function draftProfileHtml(profile: DraftProfileFields): string {
 <tr><td style="padding:16px 36px; border-bottom:1px solid #eef0f5;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
 <td style="vertical-align:middle;">
-<span style="display:inline-block; width:22px; height:22px; background:#4f46e5; border-radius:6px; color:#fff; font-weight:900; font-size:12px; text-align:center; line-height:22px; vertical-align:middle;">R</span>
+<span style="display:inline-block; width:24px; height:24px; background:#4f46e5; background-image:linear-gradient(135deg,#4f46e5,#7c5cf0); border-radius:7px; color:#fff; font-size:15px; text-align:center; line-height:24px; vertical-align:middle;">&#9678;</span>
 <span style="font-size:15px; font-weight:700; color:#0b1220; vertical-align:middle; padding-left:8px;">Radar</span>
 <span style="font-size:12px; color:#90a1b9; vertical-align:middle;">&nbsp;by AHI</span>
 </td>
